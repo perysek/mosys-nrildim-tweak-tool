@@ -1,0 +1,461 @@
+{% from 'components/icons.html' import icon %}
+{% from 'components/icons.html' import icon as svg_icon %}
+{#
+    Reusable Form Field Component Macros
+    Following the Flask + Jinja2 GUI Design Guide v2.1
+
+    Usage:
+    {% from 'components/form_fields.html' import text_input, number_input, date_input, select_input, textarea_input, form_section %}
+#}
+
+{#
+    Base Input Classes
+    Canonical token-based component classes (defined in input.css @layer components).
+    Flat System-B language: 2px radius, --color-* tokens, refined focus ring.
+#}
+{% set input_base_classes = 'form-input' %}
+
+{% set label_classes = 'form-label' %}
+
+{% set paste_btn_classes = 'form-paste-btn btn-press' %}
+
+
+{#
+    Form Section Card
+    Wraps a group of form fields in a card container
+
+    Parameters:
+    - title: Section title
+    - icon: Material icon name
+    - description: Optional description text
+#}
+{% macro form_section(title, icon='edit', description='') %}
+<div class="form-card animate-fade-up">
+    <h3 class="text-lg font-semibold mb-4 flex items-center gap-2" style="color: var(--color-ink);">
+        {{ svg_icon(icon, style='color: var(--color-ink-muted);') }}
+        {{ title }}
+    </h3>
+    {% if description %}
+    <p class="text-sm mb-4" style="color: var(--color-ink-subtle);">{{ description }}</p>
+    {% endif %}
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {{ caller() }}
+    </div>
+</div>
+{% endmacro %}
+
+
+{#
+    Text Input Field
+    Standard text input with optional paste button
+
+    Parameters:
+    - name: Input name attribute
+    - label: Field label
+    - value: Current value
+    - placeholder: Placeholder text
+    - required: Whether field is required
+    - with_paste: Show paste button for OCR workflow
+    - full_width: Span full width (md:col-span-2)
+    - autocomplete: Autocomplete attribute
+    - maxlength: Maximum input length
+    - pattern: HTML5 pattern for validation
+    - readonly: Whether field is readonly
+    - extra_classes: Additional CSS classes for input
+#}
+{% macro text_input(name, label, value='', placeholder='', required=false, with_paste=false, full_width=false, autocomplete='off', maxlength='', pattern='', readonly=false, extra_classes='') %}
+<div class="{{ 'md:col-span-2' if full_width else '' }}">
+    <label for="{{ name }}" class="{{ label_classes }}">
+        {{ label }}{% if required %} <span style="color: var(--color-error);">*</span>{% endif %}
+    </label>
+    <div class="{{ 'flex gap-2' if with_paste else '' }}">
+        <input type="text"
+               id="{{ name }}"
+               name="{{ name }}"
+               value="{{ value }}"
+               placeholder="{{ placeholder }}"
+               {% if required %}required{% endif %}
+               {% if maxlength %}maxlength="{{ maxlength }}"{% endif %}
+               {% if pattern %}pattern="{{ pattern }}"{% endif %}
+               {% if readonly %}readonly{% endif %}
+               autocomplete="{{ autocomplete }}"
+               class="{{ input_base_classes }} {{ extra_classes }}">
+        {% if with_paste %}
+        <button type="button"
+                onclick="pasteToField('{{ name }}')"
+                class="{{ paste_btn_classes }}"
+                title="Wklej ze schowka" aria-label="Wklej ze schowka">
+            {{ icon('content_paste', class='text-sm') }}
+        </button>
+        {% endif %}
+    </div>
+</div>
+{% endmacro %}
+
+
+{#
+    Number Input Field
+    Numeric input with optional paste button
+
+    Parameters:
+    - name: Input name attribute
+    - label: Field label
+    - value: Current value
+    - placeholder: Placeholder text
+    - required: Whether field is required
+    - with_paste: Show paste button
+    - min: Minimum value
+    - max: Maximum value
+    - step: Step increment
+    - full_width: Span full width
+    - extra_classes: Additional CSS classes
+#}
+{% macro number_input(name, label, value='', placeholder='', required=false, with_paste=false, min='', max='', step='0.01', full_width=false, extra_classes='') %}
+<div class="{{ 'md:col-span-2' if full_width else '' }}">
+    <label for="{{ name }}" class="{{ label_classes }}">
+        {{ label }}{% if required %} <span style="color: var(--color-error);">*</span>{% endif %}
+    </label>
+    <div class="{{ 'flex gap-2' if with_paste else '' }}">
+        <input type="number"
+               id="{{ name }}"
+               name="{{ name }}"
+               value="{{ value }}"
+               placeholder="{{ placeholder }}"
+               {% if required %}required{% endif %}
+               {% if min != '' %}min="{{ min }}"{% endif %}
+               {% if max != '' %}max="{{ max }}"{% endif %}
+               step="{{ step }}"
+               class="{{ input_base_classes }} font-semibold {{ extra_classes }}">
+        {% if with_paste %}
+        <button type="button"
+                onclick="pasteToField('{{ name }}')"
+                class="{{ paste_btn_classes }}"
+                title="Wklej ze schowka" aria-label="Wklej ze schowka">
+            {{ icon('content_paste', class='text-sm') }}
+        </button>
+        {% endif %}
+    </div>
+</div>
+{% endmacro %}
+
+
+{#
+    Date Input Field
+    Date picker input with optional paste button
+
+    Parameters:
+    - name: Input name attribute
+    - label: Field label
+    - value: Current value (YYYY-MM-DD format)
+    - required: Whether field is required
+    - with_paste: Show paste button
+    - min: Minimum date
+    - max: Maximum date
+    - full_width: Span full width
+#}
+{% macro date_input(name, label, value='', required=false, with_paste=false, min='', max='', full_width=false) %}
+<div class="{{ 'md:col-span-2' if full_width else '' }}">
+    <label for="{{ name }}" class="{{ label_classes }}">
+        {{ label }}{% if required %} <span style="color: var(--color-error);">*</span>{% endif %}
+    </label>
+    <div class="{{ 'flex gap-2' if with_paste else '' }}">
+        <input type="date"
+               id="{{ name }}"
+               name="{{ name }}"
+               value="{{ value }}"
+               {% if required %}required{% endif %}
+               {% if min %}min="{{ min }}"{% endif %}
+               {% if max %}max="{{ max }}"{% endif %}
+               class="{{ input_base_classes }} appearance-none">
+        {% if with_paste %}
+        <button type="button"
+                onclick="pasteToField('{{ name }}')"
+                class="{{ paste_btn_classes }}"
+                title="Wklej ze schowka" aria-label="Wklej ze schowka">
+            {{ icon('content_paste', class='text-sm') }}
+        </button>
+        {% endif %}
+    </div>
+</div>
+{% endmacro %}
+
+
+{#
+    Select Dropdown Field
+    Dropdown select with custom styling
+
+    Parameters:
+    - name: Input name attribute
+    - label: Field label
+    - options: List of options [{value: 'val', label: 'Label', selected: false}] or simple list ['Option 1', 'Option 2']
+    - selected_value: Currently selected value
+    - required: Whether field is required
+    - placeholder: Placeholder/empty option text
+    - full_width: Span full width
+    - onchange: JavaScript onchange handler
+#}
+{% macro select_input(name, label, options, selected_value='', required=false, placeholder='', full_width=false, onchange='') %}
+<div class="{{ 'md:col-span-2' if full_width else '' }}">
+    <label for="{{ name }}" class="{{ label_classes }}">
+        {{ label }}{% if required %} <span style="color: var(--color-error);">*</span>{% endif %}
+    </label>
+    <div class="relative">
+        <select id="{{ name }}"
+                name="{{ name }}"
+                {% if required %}required{% endif %}
+                {% if onchange %}onchange="{{ onchange }}"{% endif %}
+                class="form-select">
+            {% if placeholder %}
+            <option value="">{{ placeholder }}</option>
+            {% endif %}
+            {% for option in options %}
+                {% if option is mapping %}
+                <option value="{{ option.value }}"
+                        {% if option.value == selected_value or option.selected %}selected{% endif %}>
+                    {{ option.label }}
+                </option>
+                {% else %}
+                <option value="{{ option }}"
+                        {% if option == selected_value %}selected{% endif %}>
+                    {{ option }}
+                </option>
+                {% endif %}
+            {% endfor %}
+        </select>
+        <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3" style="color: var(--color-ink-subtle);">
+            {{ icon('expand_more', class='text-lg') }}
+        </div>
+    </div>
+</div>
+{% endmacro %}
+
+
+{#
+    Textarea Field
+    Multi-line text input with optional paste button
+
+    Parameters:
+    - name: Input name attribute
+    - label: Field label
+    - value: Current value
+    - placeholder: Placeholder text
+    - required: Whether field is required
+    - with_paste: Show paste button
+    - rows: Number of visible rows
+    - full_width: Span full width
+    - maxlength: Maximum input length
+    - resize: Whether textarea is resizable ('none', 'vertical', 'horizontal', 'both')
+#}
+{% macro textarea_input(name, label, value='', placeholder='', required=false, with_paste=false, rows=3, full_width=false, maxlength='', resize='vertical') %}
+{% set resize_classes = {
+    'none': 'resize-none',
+    'vertical': 'resize-y',
+    'horizontal': 'resize-x',
+    'both': 'resize'
+} %}
+<div class="{{ 'md:col-span-2' if full_width else '' }}">
+    <label for="{{ name }}" class="{{ label_classes }}">
+        {{ label }}{% if required %} <span style="color: var(--color-error);">*</span>{% endif %}
+    </label>
+    <div class="{{ 'flex gap-2' if with_paste else '' }}">
+        <textarea id="{{ name }}"
+                  name="{{ name }}"
+                  placeholder="{{ placeholder }}"
+                  rows="{{ rows }}"
+                  {% if required %}required{% endif %}
+                  {% if maxlength %}maxlength="{{ maxlength }}"{% endif %}
+                  class="form-textarea {{ resize_classes[resize] }}">{{ value }}</textarea>
+        {% if with_paste %}
+        <button type="button"
+                onclick="pasteToField('{{ name }}')"
+                class="{{ paste_btn_classes }} h-fit"
+                title="Wklej ze schowka" aria-label="Wklej ze schowka">
+            {{ icon('content_paste', class='text-sm') }}
+        </button>
+        {% endif %}
+    </div>
+</div>
+{% endmacro %}
+
+
+{#
+    Checkbox Field
+    Checkbox input with label
+
+    Parameters:
+    - name: Input name attribute
+    - label: Field label
+    - checked: Whether checked
+    - value: Checkbox value (default '1')
+    - full_width: Span full width
+    - description: Optional helper text
+#}
+{% macro checkbox_input(name, label, checked=false, value='1', full_width=false, description='') %}
+<div class="{{ 'md:col-span-2' if full_width else '' }}">
+    <div class="flex items-start gap-3 py-2">
+        <input type="checkbox"
+               id="{{ name }}"
+               name="{{ name }}"
+               value="{{ value }}"
+               {% if checked %}checked{% endif %}
+               class="w-5 h-5 mt-0.5 cursor-pointer"
+               style="accent-color: var(--color-ink); border-radius: var(--radius-sm);">
+        <div>
+            <label for="{{ name }}" class="text-sm font-medium cursor-pointer" style="color: var(--color-ink-muted);">
+                {{ label }}
+            </label>
+            {% if description %}
+            <p class="text-xs mt-0.5" style="color: var(--color-ink-subtle);">{{ description }}</p>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endmacro %}
+
+
+{#
+    Currency Input Group
+    Amount input with currency selector
+
+    Parameters:
+    - amount_name: Amount field name
+    - currency_name: Currency field name
+    - amount_value: Current amount value
+    - currency_value: Current currency value
+    - currencies: List of currency options (default PLN, EUR, USD, GBP)
+    - required: Whether amount is required
+    - with_paste: Show paste button for amount
+#}
+{% macro currency_input(amount_name, currency_name, amount_value='', currency_value='PLN', currencies=['PLN', 'EUR', 'USD', 'GBP'], required=false, with_paste=false) %}
+<div>
+    <label for="{{ amount_name }}" class="{{ label_classes }}">
+        Kwota{% if required %} <span style="color: var(--color-error);">*</span>{% endif %}
+    </label>
+    <div class="flex gap-2">
+        <div class="flex-1 flex gap-2">
+            <input type="number"
+                   id="{{ amount_name }}"
+                   name="{{ amount_name }}"
+                   value="{{ amount_value }}"
+                   step="0.01"
+                   min="0"
+                   {% if required %}required{% endif %}
+                   placeholder="0.00"
+                   class="{{ input_base_classes }} font-semibold">
+            {% if with_paste %}
+            <button type="button"
+                    onclick="pasteToField('{{ amount_name }}')"
+                    class="{{ paste_btn_classes }}"
+                    title="Wklej ze schowka" aria-label="Wklej ze schowka">
+                {{ icon('content_paste', class='text-sm') }}
+            </button>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<div>
+    <label for="{{ currency_name }}" class="{{ label_classes }}">Waluta</label>
+    <div class="relative">
+        <select id="{{ currency_name }}"
+                name="{{ currency_name }}"
+                class="form-select">
+            {% for curr in currencies %}
+            <option value="{{ curr }}" {% if curr == currency_value %}selected{% endif %}>{{ curr }}</option>
+            {% endfor %}
+        </select>
+        <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3" style="color: var(--color-ink-subtle);">
+            {{ icon('expand_more', class='text-lg') }}
+        </div>
+    </div>
+</div>
+{% endmacro %}
+
+
+{#
+    Form Actions Bar
+    Button group for form submission
+
+    Parameters:
+    - submit_label: Submit button label
+    - submit_icon: Submit button icon
+    - cancel_url: URL to navigate on cancel
+    - cancel_label: Cancel button label
+    - is_loading: Whether form is in loading state
+#}
+{% macro form_actions(submit_label='Zapisz', submit_icon='save', cancel_url='', cancel_label='Anuluj', is_loading=false) %}
+<div class="flex items-center gap-4 pt-2 animate-fade-up">
+    <button type="submit"
+            class="form-btn-primary btn-press flex-1 md:flex-none"
+            {% if is_loading %}disabled{% endif %}>
+        {% if is_loading %}
+        {{ icon('hourglass_top', class='text-sm animate-spin') }}
+        Zapisywanie...
+        {% else %}
+        {{ icon(submit_icon, class='text-sm') }}
+        {{ submit_label }}
+        {% endif %}
+    </button>
+    {% if cancel_url %}
+    {# Real link (Issue 8): middle-click / new tab / hover-preview all work #}
+    <a href="{{ cancel_url }}" class="form-btn-secondary btn-press flex-1 md:flex-none">
+        {{ cancel_label }}
+    </a>
+    {% endif %}
+</div>
+{% endmacro %}
+
+
+{#
+    Field Error Message
+    Shows validation error below a field
+
+    Parameters:
+    - field_name: Name of the field with error
+    - error_message: Error message to display
+#}
+{% macro field_error(field_name, error_message) %}
+{% if error_message %}
+<p id="{{ field_name }}-error" class="mt-1 text-sm flex items-center gap-1 animate-fade-in" style="color: var(--color-error);">
+    {{ icon('error_outline', class='text-sm') }}
+    {{ error_message }}
+</p>
+{% endif %}
+{% endmacro %}
+
+
+{#
+    Field Helper Text
+    Shows helper/hint text below a field
+
+    Parameters:
+    - text: Helper text to display
+#}
+{% macro field_helper(text) %}
+<p class="mt-1 text-xs" style="color: var(--color-ink-subtle);">{{ text }}</p>
+{% endmacro %}
+
+
+{#
+    Read-only Display Field
+    Shows a value in read-only format
+
+    Parameters:
+    - label: Field label
+    - value: Value to display
+    - icon: Optional icon
+    - full_width: Span full width
+#}
+{% macro readonly_field(label, value, icon='', full_width=false) %}
+<div class="{{ 'md:col-span-2' if full_width else '' }}">
+    <label class="{{ label_classes }}">{{ label }}</label>
+    <div class="px-4 py-2 flex items-center gap-2"
+         style="background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-sm);">
+        {% if icon %}
+        {{ svg_icon(icon, class='text-sm', style='color: var(--color-ink-subtle);') }}
+        {% endif %}
+        <span class="text-sm" style="color: var(--color-ink);">{{ value or '-' }}</span>
+    </div>
+</div>
+{% endmacro %}

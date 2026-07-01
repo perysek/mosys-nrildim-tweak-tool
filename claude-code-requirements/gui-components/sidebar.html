@@ -1,0 +1,408 @@
+{% from 'macros/sidebar_macros.html' import sidebar_link, sidebar_section_start, sidebar_section_end %}
+
+<style>
+    /* Mobile drawer (< lg, where the sidebar is a slide-in panel): present the
+       deliberately-limited link set as one flat list. The accordion section
+       headers are removed and all section bodies are forced open, but the
+       `nav-mobile-hide` trim is KEPT — only the phone-relevant links show.
+       Gaps + per-link height are tightened to fight vertical overflow. Desktop
+       (>= lg) keeps the collapsible grouped rail untouched. */
+    @media (max-width: 1023px) {
+        /* Keep the mobile trim: links/sections tagged nav-mobile-hide stay
+           hidden on phones (they reappear on the always-on desktop rail). */
+        .nav-mobile-hide { display: none !important; }
+
+        /* Drop the section grouping — hide the accordion header (and its chevron). */
+        .sidebar-nav .sidebar-section-header { display: none !important; }
+
+        /* Force every section body open regardless of the JS accordion state,
+           which pins max-height inline (only !important beats an inline style). */
+        .sidebar-nav .sidebar-section-items {
+            max-height: none !important;
+            overflow: visible !important;
+        }
+
+        /* Flatten + compact: remove inter-section margins so links read as one
+           continuous list, and trim link height/padding to claw back vertical
+           space (kept at a usable ~40px tap target, down from the 44px default). */
+        .sidebar-nav .sidebar-section { margin-top: 0 !important; }
+        .sidebar-nav .sidebar-link {
+            min-height: 40px !important;
+            padding-top: 0.375rem !important;
+            padding-bottom: 0.375rem !important;
+        }
+    }
+</style>
+
+<aside class="w-[17rem] flex-col shadow-xl hidden lg:flex"
+       style="background: var(--sidebar-bg); color: var(--sidebar-text);"
+       id="sidebar">
+    <!-- Logo Section -->
+    <div class="px-4 py-2 flex flex-col items-center gap-1"
+         style="border-bottom: 1px solid var(--sidebar-border);">
+        <img src="{{ logo_data_uri }}"
+             alt="MyWay Nails &amp; Beauty"
+             class="w-full h-auto object-contain">
+        <p class="text-[13px] tracking-widest uppercase text-center"
+           style="color: var(--sidebar-text);">Beauty Salon Management</p>
+    </div>
+
+    {% if current_user.is_authenticated %}
+
+    {% set finanse_active = request.endpoint in ['main.dashboard', 'main.invoices_list', 'main.sellers_list', 'main.upload', 'main.analytics_dashboard'] %}
+    {% set salon_active = request.endpoint in ['main.appointments_list', 'main.appointments_calendar', 'main.create_appointment', 'main.view_appointment', 'main.clients_list'] %}
+    {% set zarzadzanie_active = request.endpoint in ['main.employees_list', 'main.services_list', 'main.formy_zatrudnienia_list', 'main.service_categories_list', 'absence.management_index', 'absence.my_absences', 'absence_balance.balances_index'] %}
+    {% set korekta_active = request.endpoint in ['main.superadmin_edit_latest', 'main.superadmin_edit_visit', 'main.superadmin_edit_table'] %}
+    {% set system_active = request.endpoint in ['main.history', 'main.email_settings', 'users.users_list', 'roles.roles_list', 'auth.profile', 'sms.sms_settings', 'sms.sms_log', 'main.import_page'] %}
+
+    <!-- Navigation -->
+    <nav class="sidebar-nav flex-1 px-4 py-2 overflow-y-auto" aria-label="Menu glowne">
+
+        <!-- Finanse -->
+        {% if user_permissions.invoices %}
+        {{ sidebar_section_start('finanse', 'Finanse', finanse_active) }}
+            {{ sidebar_link(
+                url_for('main.dashboard'), 'Koszty',
+                'M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z',
+                request.endpoint == 'main.dashboard', extra_class='nav-mobile-hide') }}
+            {{ sidebar_link(
+                url_for('main.invoices_list'), 'Lista faktur',
+                'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z',
+                request.endpoint == 'main.invoices_list') }}
+            {{ sidebar_link(
+                url_for('main.sellers_list'), 'Lista sprzedawcow',
+                'M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4',
+                request.endpoint == 'main.sellers_list', extra_class='nav-mobile-hide') }}
+            {{ sidebar_link(
+                url_for('main.upload'), 'Import dokumentow',
+                'M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12',
+                request.endpoint == 'main.upload', extra_class='nav-mobile-hide') }}
+            {{ sidebar_link(
+                url_for('main.analytics_dashboard'), 'Analiza biznesowa',
+                'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z',
+                request.endpoint == 'main.analytics_dashboard', extra_class='nav-mobile-hide') }}
+        {{ sidebar_section_end() }}
+        {% endif %}
+
+        <!-- Salon -->
+        {% if user_permissions.appointments or user_permissions.clients %}
+        {{ sidebar_section_start('salon', 'Salon', salon_active) }}
+            {% if user_permissions.appointments %}
+            {{ sidebar_link(
+                url_for('main.appointments_list'), 'Wizyty',
+                'M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z',
+                request.endpoint in ['main.appointments_list', 'main.appointments_calendar', 'main.create_appointment', 'main.view_appointment']) }}
+            {% endif %}
+            {% if user_permissions.clients %}
+            {{ sidebar_link(
+                url_for('main.clients_list'), 'Klienci',
+                'M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z',
+                request.endpoint == 'main.clients_list') }}
+            {% endif %}
+        {{ sidebar_section_end() }}
+        {% endif %}
+
+        <!-- Zarzadzanie -->
+        {% if user_permissions.employees or user_permissions.services or is_supervisor or has_linked_employee %}
+        {{ sidebar_section_start('zarzadzanie', 'Zarzadzanie', zarzadzanie_active) }}
+            {% if user_permissions.employees %}
+            {{ sidebar_link(
+                url_for('main.employees_list'), 'Pracownicy',
+                'M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z',
+                request.endpoint == 'main.employees_list') }}
+            {% endif %}
+            {% if is_supervisor or user_permissions.absences %}
+            {{ sidebar_link(
+                url_for('absence.management_index'), 'Nieobecnosci',
+                'M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z',
+                request.endpoint == 'absence.management_index') }}
+            {{ sidebar_link(
+                url_for('absence_balance.balances_index'), 'Bilanse urlopow',
+                'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z',
+                request.endpoint == 'absence_balance.balances_index', extra_class='nav-mobile-hide') }}
+            {% endif %}
+            {% if has_linked_employee %}
+            {{ sidebar_link(
+                url_for('absence.my_absences'), 'Moje nieobecnosci',
+                'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2',
+                request.endpoint == 'absence.my_absences') }}
+            {% endif %}
+            {% if user_permissions.services %}
+            {{ sidebar_link(
+                url_for('main.services_list'), 'Uslugi',
+                'M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z',
+                request.endpoint == 'main.services_list', extra_class='nav-mobile-hide') }}
+            {{ sidebar_link(
+                url_for('main.service_categories_list'), 'Kategorie uslug',
+                'M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z',
+                request.endpoint == 'main.service_categories_list', extra_class='nav-mobile-hide') }}
+            {{ sidebar_link(
+                url_for('main.formy_zatrudnienia_list'), 'Rodzaje zatrudnienia',
+                'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2',
+                request.endpoint == 'main.formy_zatrudnienia_list', extra_class='nav-mobile-hide') }}
+            {% endif %}
+        {{ sidebar_section_end() }}
+        {% endif %}
+
+        <!-- Korekta danych -->
+        {% if user_permissions.data_correction %}
+        {{ sidebar_section_start('korekta', 'Korekta danych', korekta_active, extra_class='nav-mobile-hide') }}
+            {{ sidebar_link(
+                url_for('main.superadmin_edit_latest'), 'Edycja wizyt',
+                'M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z',
+                request.endpoint in ['main.superadmin_edit_latest', 'main.superadmin_edit_visit']) }}
+            {{ sidebar_link(
+                url_for('main.superadmin_edit_table'), 'Tabela wizyt',
+                'M3 10h18M3 14h18M3 6h18M3 18h18M7 6v12M17 6v12',
+                request.endpoint == 'main.superadmin_edit_table') }}
+        {{ sidebar_section_end() }}
+        {% endif %}
+
+        <!-- System -->
+        {{ sidebar_section_start('system', 'System', system_active) }}
+            {% if user_permissions.reports %}
+            {{ sidebar_link(
+                url_for('main.history'), 'Historia zmian',
+                'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z',
+                request.endpoint == 'main.history', extra_class='nav-mobile-hide') }}
+            {% endif %}
+            {% if user_permissions.settings %}
+            {# Settings icon has two paths — use inline instead of macro #}
+            <a href="{{ url_for('main.email_settings') }}"
+               class="sidebar-link nav-mobile-hide flex items-center gap-2.5 px-4 py-2 min-h-[44px] lg:min-h-0 text-base font-medium transition-all duration-200 group
+               {{ 'sidebar-link--active rounded-[var(--radius-sm)]' if request.endpoint == 'main.email_settings' else 'sidebar-link--default rounded-[var(--radius-sm)]' }}"
+               {% if request.endpoint == 'main.email_settings' %}aria-current="page"{% endif %}>
+                <svg class="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+                Ustawienia
+            </a>
+            {{ sidebar_link(
+                url_for('users.users_list'), 'Uzytkownicy',
+                'M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z',
+                request.endpoint == 'users.users_list', extra_class='nav-mobile-hide') }}
+            {% endif %}
+            {% if user_permissions.settings %}
+            {{ sidebar_link(
+                url_for('roles.roles_list'), 'Poziomy dostepu',
+                'M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z',
+                request.endpoint == 'roles.roles_list', extra_class='nav-mobile-hide') }}
+            {{ sidebar_link(
+                url_for('sms.sms_settings'), 'Ustawienia SMS',
+                'M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z',
+                request.endpoint in ['sms.sms_settings', 'sms.sms_log']) }}
+            {% endif %}
+            {% if user_permissions.data_import %}
+            {{ sidebar_link(
+                url_for('main.import_page'), 'Import danych',
+                'M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4',
+                request.endpoint == 'main.import_page', extra_class='nav-mobile-hide') }}
+            {% endif %}
+            {{ sidebar_link(
+                url_for('auth.profile'), 'Profil',
+                'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z',
+                request.endpoint == 'auth.profile') }}
+        {{ sidebar_section_end() }}
+
+    </nav>
+    {% endif %}
+
+    <!-- User Info + Logout -->
+    {% if current_user.is_authenticated %}
+    <div class="px-4 py-3 shrink-0"
+         style="border-top: 1px solid var(--sidebar-border); background: var(--sidebar-bg-deep);">
+        <div class="flex items-center gap-2">
+            <div class="w-10 h-10 rounded-full flex items-center justify-center text-[13px] font-bold text-white shadow-lg"
+                 style="background: linear-gradient(135deg, var(--color-accent), #a07d1a);">
+                {{ current_user.full_name[:2].upper() }}
+            </div>
+            <div class="flex-1 min-w-0">
+                <p class="text-base font-medium truncate" style="color: var(--color-ink);">{{ current_user.full_name }}</p>
+                <p class="text-[13px]" style="color: var(--sidebar-text);">{{ {'superuser': 'Superadmin', 'admin': 'Administrator', 'accountant': 'Księgowa', 'receptionist': 'Recepcjonistka', 'stylist': 'Stylistka'}.get(current_user.role, current_user.role | capitalize) }}</p>
+            </div>
+        </div>
+    </div>
+    <div class="p-2 shrink-0" style="border-top: 1px solid var(--sidebar-border);">
+        <a href="{{ url_for('auth.logout') }}"
+           class="flex items-center gap-2 px-4 py-2 rounded-[var(--radius-sm)] text-base font-medium transition-all duration-200 group border border-transparent hover:border-red-800/30"
+           style="color: var(--sidebar-text);"
+           onmouseenter="this.style.color='var(--color-error)'; this.style.background='#fef2f2';"
+           onmouseleave="this.style.color='var(--sidebar-text)'; this.style.background='transparent';">
+            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+            </svg>
+            Wyloguj
+        </a>
+    </div>
+    {% endif %}
+</aside>
+
+<!-- Mobile sidebar overlay backdrop -->
+<div id="sidebar-overlay"
+     class="fixed inset-0 bg-black/50 z-30 hidden lg:hidden"
+     aria-hidden="true"></div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    var nav = document.querySelector('.sidebar-nav');
+    if (!nav) return;
+    var sections = nav.querySelectorAll('.sidebar-section');
+
+    function getItems(section) {
+        return section.querySelector('.sidebar-section-items');
+    }
+
+    function getButton(section) {
+        return section.querySelector('.sidebar-section-header');
+    }
+
+    function expand(section) {
+        var items = getItems(section);
+        var btn = getButton(section);
+        if (!items) return;
+        items.style.maxHeight = items.scrollHeight + 'px';
+        if (btn) {
+            btn.setAttribute('aria-expanded', 'true');
+            var chevron = btn.querySelector('.sidebar-chevron');
+            if (chevron) chevron.classList.add('rotate-180');
+        }
+    }
+
+    function collapse(section) {
+        var items = getItems(section);
+        var btn = getButton(section);
+        if (!items) return;
+        items.style.maxHeight = '0px';
+        if (btn) {
+            btn.setAttribute('aria-expanded', 'false');
+            var chevron = btn.querySelector('.sidebar-chevron');
+            if (chevron) chevron.classList.remove('rotate-180');
+        }
+    }
+
+    // Initialize: expand active sections, collapse others
+    sections.forEach(function (section) {
+        if (section.dataset.active === 'true') {
+            expand(section);
+        } else {
+            collapse(section);
+        }
+    });
+
+    // Click-to-toggle only (no hover behavior)
+    sections.forEach(function (section) {
+        var header = getButton(section);
+        if (!header) return;
+        header.addEventListener('click', function () {
+            var items = getItems(section);
+            var isExpanded = items && items.style.maxHeight && items.style.maxHeight !== '0px';
+            if (isExpanded) {
+                collapse(section);
+            } else {
+                // Collapse all other sections first (single-open accordion)
+                sections.forEach(function (s) {
+                    if (s !== section) collapse(s);
+                });
+                expand(section);
+            }
+        });
+    });
+
+    // Mobile sidebar toggle
+    var sidebar = document.getElementById('sidebar');
+    var overlay = document.getElementById('sidebar-overlay');
+    var toggleBtn = document.getElementById('sidebar-toggle');
+
+    function getFocusable() {
+        // offsetParent is null for elements hidden by permission gating etc.
+        return Array.prototype.slice.call(
+            sidebar.querySelectorAll('a[href], button:not([disabled])')
+        ).filter(function (el) { return el.offsetParent !== null; });
+    }
+
+    // Trap Tab inside the open drawer — without this, Tab escapes to the
+    // page content hidden behind the overlay.
+    function trapTab(e) {
+        if (e.key !== 'Tab') return;
+        var f = getFocusable();
+        if (!f.length) return;
+        var first = f[0], last = f[f.length - 1];
+        if (e.shiftKey && document.activeElement === first) {
+            e.preventDefault(); last.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+            e.preventDefault(); first.focus();
+        }
+    }
+
+    function openMobileSidebar() {
+        if (!sidebar || !overlay) return;
+        sidebar.classList.remove('hidden');
+        sidebar.classList.add('fixed', 'inset-y-0', 'left-0', 'z-40');
+        overlay.classList.remove('hidden');
+        overlay.setAttribute('aria-hidden', 'false');
+        if (toggleBtn) toggleBtn.setAttribute('aria-expanded', 'true');
+        document.body.classList.add('scroll-lock');
+        document.addEventListener('keydown', trapTab);
+        // Focus first link in sidebar
+        var firstLink = sidebar.querySelector('a[href]');
+        if (firstLink) firstLink.focus();
+    }
+
+    function closeMobileSidebar() {
+        if (!sidebar || !overlay) return;
+        // Only close on mobile (< lg breakpoint)
+        if (window.innerWidth >= 1024) return;
+        sidebar.classList.add('hidden');
+        sidebar.classList.remove('fixed', 'inset-y-0', 'left-0', 'z-40');
+        overlay.classList.add('hidden');
+        overlay.setAttribute('aria-hidden', 'true');
+        if (toggleBtn) toggleBtn.setAttribute('aria-expanded', 'false');
+        document.body.classList.remove('scroll-lock');
+        document.removeEventListener('keydown', trapTab);
+        if (toggleBtn) toggleBtn.focus();
+    }
+
+    if (toggleBtn) {
+        toggleBtn.addEventListener('click', function () {
+            var isHidden = sidebar.classList.contains('hidden');
+            if (isHidden) {
+                openMobileSidebar();
+            } else {
+                closeMobileSidebar();
+            }
+        });
+    }
+
+    if (overlay) {
+        overlay.addEventListener('click', closeMobileSidebar);
+    }
+
+    // Close on Escape key
+    document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' && sidebar && !sidebar.classList.contains('hidden') && window.innerWidth < 1024) {
+            // Esc consumes one layer at a time: closing the drawer must not
+            // also trigger keyboard-shortcuts.js's generic Esc handler, which
+            // blurs activeElement and would undo the focus return to the toggle.
+            e.stopImmediatePropagation();
+            closeMobileSidebar();
+        }
+    });
+
+    // Accordion sections pin max-height to a px snapshot of scrollHeight;
+    // a viewport/font reflow can change the real height and clip items.
+    // Recompute for expanded sections after resize settles.
+    var resizeTimer;
+    window.addEventListener('resize', function () {
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(function () {
+            sections.forEach(function (section) {
+                var items = getItems(section);
+                if (items && items.style.maxHeight && items.style.maxHeight !== '0px') {
+                    items.style.maxHeight = items.scrollHeight + 'px';
+                }
+            });
+        }, 120);
+    });
+});
+</script>

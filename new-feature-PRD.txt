@@ -1,0 +1,31 @@
+Add new feature with new-added page-view html template integrated into side bar navlink.
+Feature specification and functionality:
+
+##1: displays table expanded to page-view max-width showing measurements results with columns matching measurements data MOSYS-table.
+
+## table UI/GUI requirements:
+# semantic search filters in each column header and with sorting asc/desc aria icon buttons
+# table column-headers labels - to be taken from MOSYS-table columns names, re-phrased into user-friendly and column-data-content-descriptive - I trust your call here
+# sticky column headers, horizontal scrollin only, no vertical scrolling allowed
+# columns width and max-width ratios must ensure no row-values overlaps and full text content display. For support this, apply maxlines:2, minimal padding, low font spacing, font-size adjusted for optimal readibility vs. conent full data display ratio, minimal row spacing
+# table wrapper border radius: 2px
+# table footer with: total rows count, average min, max and range value of measurement results data values (all, not only displayed in UI).
+# apply requirements and rules defined in ./claude-code-requirements folder files. For conflicts with above spec-points - spec-points has priority.
+
+##2: top-right button 'SPC tweaks' which routes to page with sections displaying:
+# options slider-adjustable for results values (line-chart) squizzing (values spread reduction).
+# line chart of results fetched from previous page data-table user-filtered. 
+# Cpk and Cp calulations, min/average/max/range calculations badges.
+Bottom-right buttons: 'Preview', 'Commit'
+
+'Preview' button: toggleable-ON-OFF with toggle state change-click behavior: animated real-time chart results and badges values transition between current <-> tweaked. Animation duration 0.5s.
+
+'Commit' button: when clicked shows custom modal for user confirmation and when confirmed, updates MOSYS-database results table with user-tweaked data scoped to fetched filtered values.
+
+# toast custom notification time-dismissable= 2 seconds, with "MOSYS records updated" info-text.
+# for db update errors, show toast alert-notification with error description using non-tech-user friendly wording.
+
+**Apply GUI/UI design as per claude-code-requirements independetly from existing templates design.
+**For mosys CRUD, use existing context manager in ./functions/mosys.py
+
+ask my confirmation for CRUD functions code-approach.

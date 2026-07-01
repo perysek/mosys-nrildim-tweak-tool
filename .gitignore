@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+
+# Virtual environment
+venv/
+.venv/
+env/
+
+# IDE / editors
+.idea/
+.vscode/
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Local session / scratch
+.remember/logs/
+*.log

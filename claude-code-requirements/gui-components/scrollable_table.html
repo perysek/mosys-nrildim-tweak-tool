@@ -1,0 +1,305 @@
+{% from 'components/icons.html' import icon %}
+{% from 'components/icons.html' import icon as svg_icon %}
+{#
+    Reusable Table Component Macros
+    Canonical token-based styling (System B): flat fills, 2-3px radii,
+    --color-* tokens, glyph sort icons, accessible sortable headers.
+
+    Usage:
+    {% from 'components/scrollable_table.html' import table_card, table_header_classes, empty_state, status_badge, ocr_badge %}
+#}
+
+{#
+    Table Card Wrapper
+    Creates a card container for tables with optional header
+
+    Parameters:
+    - title: Card header title (optional)
+    - count_label: Badge text showing item count (optional)
+    - full_height: If true, makes table fill viewport height (for dashboard layouts)
+    - id: Optional ID for the card container
+    - extra_classes: Additional CSS classes
+#}
+{% macro table_card(title='', count_label='', full_height=false, id='', extra_classes='') %}
+<div {% if id %}id="{{ id }}"{% endif %}
+     class="bg-white rounded-[3px] border border-[var(--color-border)] overflow-hidden {{ 'flex-1 flex flex-col' if full_height else '' }} {{ extra_classes }}"
+     style="box-shadow: 0 1px 3px rgba(0,0,0,.04);">
+
+    {% if title %}
+    <div class="px-4 py-3 border-b border-[var(--color-border)] bg-[var(--color-surface)] flex items-center justify-between">
+        <h2 class="text-lg font-semibold text-[var(--color-ink)]">{{ title }}</h2>
+        {% if count_label %}
+        <span class="px-3 py-1 bg-[var(--color-surface)] text-[var(--color-ink-muted)] border border-[var(--color-border)] rounded-[2px] text-sm font-medium">
+            {{ count_label }}
+        </span>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    <div class="overflow-x-auto {{ 'overflow-y-auto flex-1' if full_height else '' }} scrollbar-thin">
+        {{ caller() }}
+    </div>
+</div>
+{% endmacro %}
+
+
+{#
+    Table Header Classes
+    Returns appropriate classes for table headers
+
+    Parameters:
+    - full_height: If true, returns sticky header classes for scrollable tables
+    - with_search: If true, adds padding for search inputs
+#}
+{% macro table_header_classes(full_height=false, with_search=false) %}
+{{ 'sticky top-0 z-10' if full_height else '' }} bg-[var(--color-surface)] text-left text-xs font-semibold text-[var(--color-ink-subtle)] uppercase tracking-wider
+{%- endmacro %}
+
+
+{#
+    Table Header Cell with Sort (Issue 1 / S3)
+    Accessible sortable header: focusable inner <button> (native Enter/Space),
+    aria-sort on the <th>, canonical glyph icon (.th-sort-icon).
+
+    For server-sorted tables (?sort= reload) aria-sort is correct at render time.
+    For client-sorted tables, the page JS must keep aria-sort in sync after each
+    sort:  th.setAttribute('aria-sort', dir === 'asc' ? 'ascending' : 'descending')
+    and reset all sibling th-sortable elements to 'none'.
+
+    Parameters:
+    - label: Column label
+    - sort_key: URL parameter key for sorting
+    - current_sort: Current sort column
+    - current_order: Current sort order (asc/desc)
+    - align: Text alignment (left, center, right)
+    - width_class: Optional width class (e.g., 'w-32')
+#}
+{% macro sortable_header(label, sort_key, current_sort='', current_order='asc', align='left', width_class='') %}
+{% set is_active = (current_sort == sort_key) %}
+{% set aria = ('ascending' if current_order == 'asc' else 'descending') if is_active else 'none' %}
+<th class="th-sortable px-6 py-3 {{ width_class }} {{ 'sort-active' if is_active else '' }}"
+    aria-sort="{{ aria }}" id="th-{{ sort_key }}">
+    <button type="button"
+            class="th-sort-btn {{ 'justify-end w-full' if align == 'right' else ('justify-center w-full' if align == 'center' else '') }}"
+            onclick="sortTable('{{ sort_key }}')">
+        <span>{{ label }}</span>
+        <span class="th-sort-icon" id="si-{{ sort_key }}" aria-hidden="true">{{ '▲' if (is_active and current_order == 'asc') else ('▼' if is_active else '▲') }}</span>
+    </button>
+</th>
+{% endmacro %}
+
+
+{#
+    Table Search Row
+    Creates a collapsible search row for table filtering
+
+    Parameters:
+    - columns: List of column configs [{id: 'col_id', placeholder: 'Szukaj...', type: 'text'}]
+    - visible: Whether search row is visible by default
+#}
+{% macro search_row(columns, visible=false) %}
+<tr id="table-search-row" class="bg-[var(--color-surface)] border-b border-[var(--color-border)] {{ '' if visible else 'hidden' }} animate-fade-in">
+    {% for col in columns %}
+    <td class="px-2 py-2">
+        {% if col.searchable is not defined or col.searchable %}
+        <input type="{{ col.type|default('text') }}"
+               id="search-{{ col.id }}"
+               placeholder="{{ col.placeholder|default('Szukaj...') }}"
+               class="form-input px-2 py-1.5 text-sm"
+               onkeyup="filterTable(this, {{ loop.index0 }})">
+        {% endif %}
+    </td>
+    {% endfor %}
+</tr>
+{% endmacro %}
+
+
+{#
+    Empty State Row
+    Shows a message when table has no data
+
+    Parameters:
+    - col_count: Number of columns to span
+    - icon: Material icon name
+    - title: Main message
+    - message: Secondary message
+    - action_url: Optional URL for action button
+    - action_label: Label for action button
+    - action_icon: Icon for action button
+#}
+{% macro empty_state(col_count=1, icon='inbox', title='Brak danych', message='', action_url='', action_label='', action_icon='add') %}
+<tr>
+    <td colspan="{{ col_count }}" class="px-6 py-16 text-center">
+        <div class="flex flex-col items-center animate-fade-up">
+            <div class="w-16 h-16 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-full flex items-center justify-center mb-4">
+                {{ svg_icon(icon, class='text-3xl text-[var(--color-ink-subtle)]') }}
+            </div>
+            <p class="text-lg font-medium text-[var(--color-ink)] mb-1">{{ title }}</p>
+            {% if message %}
+            <p class="text-sm text-[var(--color-ink-subtle)] max-w-sm mb-6">{{ message }}</p>
+            {% endif %}
+            {% if action_url %}
+            <a href="{{ action_url }}" class="form-btn-primary btn-press">
+                {{ icon(action_icon, class='text-sm') }}
+                {{ action_label }}
+            </a>
+            {% endif %}
+        </div>
+    </td>
+</tr>
+{% endmacro %}
+
+
+{#
+    Status Badge
+    Displays invoice payment status with token semantic colors
+
+    Parameters:
+    - status: Status string ('Opłacona', 'Nieopłacona', 'Przeterminowana')
+    - size: Badge size ('sm', 'md')
+#}
+{% macro status_badge(status, size='sm') %}
+{% set badge_config = {
+    'Opłacona': {
+        'bg': 'bg-[rgba(45,106,79,0.12)]',
+        'text': 'text-[var(--color-success)]',
+        'icon': 'check_circle'
+    },
+    'Nieopłacona': {
+        'bg': 'bg-[rgba(154,103,0,0.12)]',
+        'text': 'text-[var(--color-warning)]',
+        'icon': 'schedule'
+    },
+    'Przeterminowana': {
+        'bg': 'bg-[rgba(155,44,44,0.12)]',
+        'text': 'text-[var(--color-error)]',
+        'icon': 'warning'
+    }
+} %}
+{% set config = badge_config.get(status, {'bg': 'bg-[var(--color-surface)]', 'text': 'text-[var(--color-ink-muted)]', 'icon': 'help_outline'}) %}
+{% set padding = 'px-2 py-0.5' if size == 'sm' else 'px-2.5 py-1' %}
+{% set text_size = 'text-xs' if size == 'sm' else 'text-sm' %}
+{% set icon_size = 'text-xs' if size == 'sm' else 'text-sm' %}
+
+<span class="inline-flex items-center gap-1 {{ padding }} rounded-[2px] {{ text_size }} font-medium {{ config.bg }} {{ config.text }}">
+    {{ icon(config.icon, class=icon_size) }}
+    {{ status }}
+</span>
+{% endmacro %}
+
+
+{#
+    OCR Confidence Badge
+    Displays OCR confidence level with token color coding
+
+    Parameters:
+    - confidence: Confidence percentage (0-100)
+    - show_label: Whether to show "OCR" label
+#}
+{% macro ocr_badge(confidence, show_label=false) %}
+{% if confidence is not none %}
+{% set conf_val = confidence|float %}
+{% if conf_val >= 80 %}
+    {% set bg = 'bg-[rgba(45,106,79,0.12)]' %}
+    {% set text = 'text-[var(--color-success)]' %}
+{% elif conf_val >= 60 %}
+    {% set bg = 'bg-[rgba(154,103,0,0.12)]' %}
+    {% set text = 'text-[var(--color-warning)]' %}
+{% else %}
+    {% set bg = 'bg-[rgba(155,44,44,0.12)]' %}
+    {% set text = 'text-[var(--color-error)]' %}
+{% endif %}
+
+<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-[2px] text-xs font-medium {{ bg }} {{ text }}">
+    {% if show_label %}<span class="opacity-75">OCR</span>{% endif %}
+    {{ "%.0f"|format(conf_val) }}%
+</span>
+{% endif %}
+{% endmacro %}
+
+
+{#
+    Action Button
+    Creates a small action button for table rows.
+    Keeps aria-label + title (icon-only buttons must stay labelled).
+
+    Parameters:
+    - icon: Material icon name
+    - title: Tooltip text
+    - onclick: JavaScript onclick handler
+    - href: Link URL (alternative to onclick)
+    - color: Button color theme (default, primary, danger, success)
+    - size: Button size (sm, md)
+#}
+{% macro action_button(icon, title='', onclick='', href='', color='default', size='sm') %}
+{% set color_classes = {
+    'default': 'text-[var(--color-ink-subtle)] hover:text-[var(--color-ink)] hover:bg-[var(--color-surface)]',
+    'primary': 'text-[var(--color-ink-subtle)] hover:text-[var(--color-focus-ring)] hover:bg-[var(--color-info-bg)]',
+    'danger': 'text-[var(--color-ink-subtle)] hover:text-[var(--color-error)] hover:bg-[rgba(155,44,44,0.08)]',
+    'success': 'text-[var(--color-ink-subtle)] hover:text-[var(--color-success)] hover:bg-[rgba(45,106,79,0.08)]',
+    'warning': 'text-[var(--color-ink-subtle)] hover:text-[var(--color-warning)] hover:bg-[rgba(154,103,0,0.08)]'
+} %}
+{% set size_classes = {
+    'sm': 'p-1.5',
+    'md': 'p-2'
+} %}
+{% set icon_sizes = {
+    'sm': 'text-base',
+    'md': 'text-lg'
+} %}
+
+{% if href %}
+<a href="{{ href }}"
+   class="{{ size_classes[size] }} rounded-[2px] transition-colors {{ color_classes[color] }} btn-press"
+   title="{{ title }}" aria-label="{{ title }}">
+    {{ svg_icon(icon, class=icon_sizes[size]) }}
+</a>
+{% else %}
+<button type="button"
+        onclick="{{ onclick }}"
+        class="{{ size_classes[size] }} rounded-[2px] transition-colors {{ color_classes[color] }} btn-press"
+        title="{{ title }}" aria-label="{{ title }}">
+    {{ svg_icon(icon, class=icon_sizes[size]) }}
+</button>
+{% endif %}
+{% endmacro %}
+
+
+{#
+    Search Toggle Button
+    Button to toggle table search row visibility
+
+    Parameters:
+    - target_id: ID of the search row to toggle
+    - active: Whether search is currently active/visible
+#}
+{% macro search_toggle_button(target_id='table-search-row', active=false) %}
+<button type="button"
+        id="toggle-search-btn"
+        onclick="toggleTableSearch('{{ target_id }}')"
+        class="p-2 rounded-[2px] transition-all {{ 'bg-[var(--color-info-bg)] text-[var(--color-focus-ring)]' if active else 'text-[var(--color-ink-subtle)] hover:text-[var(--color-focus-ring)] hover:bg-[var(--color-info-bg)]' }}"
+        title="{{ 'Ukryj filtry' if active else 'Pokaż filtry' }}" aria-label="{{ 'Ukryj filtry' if active else 'Pokaż filtry' }}">
+    {{ icon('filter_list', class='text-xl') }}
+</button>
+{% endmacro %}
+
+
+{#
+    Loading Skeleton Row
+    Shows skeleton loading animation for table rows
+
+    Parameters:
+    - col_count: Number of columns
+    - row_count: Number of skeleton rows to show
+#}
+{% macro loading_skeleton(col_count=5, row_count=5) %}
+{% for i in range(row_count) %}
+<tr class="stagger-item" style="animation-delay: {{ i * 0.05 }}s">
+    {% for j in range(col_count) %}
+    <td class="px-6 py-4">
+        <div class="h-4 skeleton rounded-[2px] w-{{ ['full', '3/4', '1/2', '2/3', '5/6'][j % 5] }}"></div>
+    </td>
+    {% endfor %}
+</tr>
+{% endfor %}
+{% endmacro %}
