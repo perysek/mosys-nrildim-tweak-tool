@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}MOSYS Dimensional Results{% endblock %}</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+
+    <link rel="stylesheet" href="{{ url_for('static', filename='tokens.css') }}">
+    {% block extra_head %}{% endblock %}
+</head>
+<body class="app-shell">
+    <a href="#main-content" class="skip-link">Skip to content</a>
+
+    <div class="shell">
+        {% include 'components/sidebar.html' %}
+
+        <div class="shell-main">
+            <header class="shell-header">
+                <button type="button" id="sidebar-toggle" class="btn-refined btn-refined-ghost sidebar-toggle"
+                        aria-label="Toggle navigation" aria-expanded="false">
+                    <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16"/>
+                    </svg>
+                </button>
+
+                <span style="font-weight:600;font-size:0.9rem;">{% block header_title %}{% endblock %}</span>
+
+                <div class="page-actions">
+                    {% block page_actions %}{% endblock %}
+                </div>
+            </header>
+
+            <main class="shell-content" id="main-content">
+                {% block content %}{% endblock %}
+            </main>
+        </div>
+    </div>
+
+    {% include 'components/confirm_modal.html' %}
+    {% include 'components/toasts.html' %}
+
+    {% block scripts %}{% endblock %}
+</body>
+</html>

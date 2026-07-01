@@ -1,0 +1,375 @@
+{% extends "base.html" %}
+{% block title %}SPC Tweaks — MOSYS{% endblock %}
+{% block header_title %}SPC Tweaks{% endblock %}
+
+{% block extra_head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+    .spc-grid { display: flex; gap: 1rem; align-items: stretch; flex: 1; min-height: 0; }
+    .chart-col { flex: 3; min-width: 0; display: flex; flex-direction: column; }
+    .chart-wrap { position: relative; flex: 1; min-height: 20rem; }
+    .side-col { flex: 1; min-width: 16rem; max-width: 22rem; display: flex; flex-direction: column; gap: 0.75rem; overflow-y: auto; }
+    .badge-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
+    .control-row { margin-bottom: 0.9rem; }
+    .control-row:last-child { margin-bottom: 0; }
+    .range-value { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--color-accent-deep); }
+    .dual-slider { position: relative; height: 1.5rem; }
+    .dual-slider input[type=range] { position: absolute; width: 100%; margin: 0; pointer-events: none; background: transparent; }
+    .dual-slider input[type=range]::-webkit-slider-thumb { pointer-events: auto; }
+    .dual-slider input[type=range]::-moz-range-thumb { pointer-events: auto; }
+    .dual-track { position: absolute; top: 0.65rem; left: 0; right: 0; height: 4px; background: var(--color-border); border-radius: 999px; }
+    .date-pickers { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.5rem; }
+    .picker-line { display: flex; align-items: center; gap: 0.5rem; }
+    .picker-line label { font-size: 0.72rem; color: var(--color-ink-subtle); width: 2.6rem; }
+    .spc-actions {
+        display: flex; justify-content: flex-end; align-items: center; gap: 0.75rem;
+        margin-top: 0.75rem; flex-shrink: 0;
+    }
+</style>
+{% endblock %}
+
+{% block page_actions %}
+<a href="{{ url_for('measurements') }}{% if measurements_query %}?{{ measurements_query }}{% endif %}"
+   class="btn-refined btn-refined-secondary btn-press">
+    <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/>
+    </svg>
+    Measurements
+</a>
+{% endblock %}
+
+{% block content %}
+<div class="refined-page">
+    <div class="page-header">
+        <div>
+            <h1 class="page-title">SPC Tweaks</h1>
+            <p class="page-subtitle">Squeeze spread &amp; flatten picks per cavity — grouped by NUMERO_FIGURA</p>
+        </div>
+    </div>
+
+    {% if error %}
+    <div class="warn-note" role="alert">{{ error }}</div>
+    {% endif %}
+
+    <div class="spc-grid">
+        <div class="chart-col panel">
+            <div class="chart-wrap"><canvas id="spcChart"></canvas></div>
+        </div>
+
+        <div class="side-col">
+            <div class="panel">
+                <p class="panel-title">Capability &amp; spread</p>
+                <div class="badge-grid">
+                    <div class="stat-badge"><span class="stat-label">Cp</span><span class="stat-value" id="b-cp">—</span></div>
+                    <div class="stat-badge"><span class="stat-label">Cpk</span><span class="stat-value" id="b-cpk">—</span></div>
+                    <div class="stat-badge"><span class="stat-label">Min</span><span class="stat-value" id="b-min">—</span></div>
+                    <div class="stat-badge"><span class="stat-label">Max</span><span class="stat-value" id="b-max">—</span></div>
+                    <div class="stat-badge"><span class="stat-label">Avg</span><span class="stat-value" id="b-avg">—</span></div>
+                    <div class="stat-badge"><span class="stat-label">Range</span><span class="stat-value" id="b-range">—</span></div>
+                </div>
+            </div>
+
+            <div class="panel">
+                <p class="panel-title">Adjustments</p>
+
+                <div class="control-row">
+                    <label class="field-label" for="squeeze">Spread squeeze — <span class="range-value" id="squeeze-val">0%</span></label>
+                    <input type="range" id="squeeze" class="refined-range" min="0" max="90" step="1" value="0"
+                           aria-label="Spread squeeze percentage">
+                </div>
+
+                <div class="control-row">
+                    <label class="switch">
+                        <input type="checkbox" id="flatten" {% if nominal is none %}disabled{% endif %}>
+                        <span class="switch-track"><span class="switch-thumb"></span></span>
+                        <span>flatten picks</span>
+                    </label>
+                    {% if nominal is none %}
+                    <p class="page-subtitle" style="margin-top:0.35rem;">Nominal value unavailable — flatten disabled.</p>
+                    {% endif %}
+                </div>
+
+                <div class="control-row">
+                    <p class="field-label">Date range (last 30 days)</p>
+                    <div class="dual-slider">
+                        <div class="dual-track"></div>
+                        <input type="range" id="range-min" min="0" max="43200" step="1" value="0" aria-label="Range start">
+                        <input type="range" id="range-max" min="0" max="43200" step="1" value="43200" aria-label="Range end">
+                    </div>
+                    <div class="date-pickers">
+                        <div class="picker-line">
+                            <label for="start-picker">Start</label>
+                            <input type="date" id="start-picker" class="refined-input">
+                            <label class="switch" title="Enable start time precision">
+                                <input type="checkbox" id="start-time-toggle">
+                                <span class="switch-track"><span class="switch-thumb"></span></span>
+                                <span>time</span>
+                            </label>
+                        </div>
+                        <div class="picker-line">
+                            <label for="end-picker">End</label>
+                            <input type="date" id="end-picker" class="refined-input">
+                            <label class="switch" title="Enable end time precision">
+                                <input type="checkbox" id="end-time-toggle">
+                                <span class="switch-track"><span class="switch-thumb"></span></span>
+                                <span>time</span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="spc-actions">
+        {% if not write_enabled %}
+        <span class="page-subtitle" style="margin-right:auto;">Preview mode — production writes are disabled.</span>
+        {% endif %}
+        <label class="switch">
+            <input type="checkbox" id="preview-toggle">
+            <span class="switch-track"><span class="switch-thumb"></span></span>
+            <span>Preview</span>
+        </label>
+        <button type="button" id="commit-btn" class="btn-refined btn-refined-accent btn-press">Commit</button>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='spc_transform.js') }}"></script>
+<script>
+    // ---- Server data ------------------------------------------------------
+    var CURRENT_SERIES = {{ current_series|safe }};
+    var USL = {{ usl if usl is not none else 'null' }};
+    var LSL = {{ lsl if lsl is not none else 'null' }};
+    var NOMINAL = {{ nominal if nominal is not none else 'null' }};
+    var PICK_THRESHOLD = {{ pick_threshold }};
+    var WRITE_ENABLED = {{ 'true' if write_enabled else 'false' }};
+    var FILTERS = {
+        articolo: {{ (filters.articolo or '')|tojson }},
+        numero_riferimento: {{ (filters.numero_riferimento or '')|tojson }},
+        date_from: {{ (filters.date_from or '')|tojson }},
+        date_to: {{ (filters.date_to or '')|tojson }}
+    };
+    var SLIDER = { min: {{ slider.min|tojson }}, max: {{ slider.max|tojson }} };
+
+    // ---- Local-time date parsing (per date-formatting rule) --------------
+    function parseLocal(str) {
+        if (!str) return null;
+        var d = str.split('T');
+        var ymd = d[0].split('-').map(Number);
+        var hms = (d[1] || '00:00:00').split(':').map(Number);
+        return new Date(ymd[0], ymd[1] - 1, ymd[2], hms[0] || 0, hms[1] || 0, hms[2] || 0);
+    }
+    function fmtDate(dt) {
+        return dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0') + '-' +
+               String(dt.getDate()).padStart(2, '0');
+    }
+
+    // ---- Stats over a series (for tweaked badges) ------------------------
+    function seriesStats(series) {
+        var vals = [];
+        Object.keys(series).forEach(function (f) { vals = vals.concat(series[f].values); });
+        if (!vals.length) return { min: null, max: null, avg: null, range: null, cp: null, cpk: null };
+        var min = Math.min.apply(null, vals), max = Math.max.apply(null, vals);
+        var mean = vals.reduce(function (a, b) { return a + b; }, 0) / vals.length;
+        var out = { min: min, max: max, avg: mean, range: max - min, cp: null, cpk: null };
+        if (USL !== null && LSL !== null && vals.length > 1) {
+            var variance = vals.reduce(function (a, b) { return a + (b - mean) * (b - mean); }, 0) / (vals.length - 1);
+            var std = Math.sqrt(variance);
+            if (std > 0) {
+                out.cp = (USL - LSL) / (6 * std);
+                out.cpk = Math.min((USL - mean) / (3 * std), (mean - LSL) / (3 * std));
+            }
+        }
+        return out;
+    }
+    function setBadges(stats, tweaked) {
+        function put(id, v) {
+            var el = document.getElementById(id);
+            el.textContent = (v === null || v === undefined) ? '—' : (Math.round(v * 1000) / 1000).toFixed(3);
+            el.classList.toggle('is-tweaked', !!tweaked);
+        }
+        put('b-cp', stats.cp); put('b-cpk', stats.cpk); put('b-min', stats.min);
+        put('b-max', stats.max); put('b-avg', stats.avg); put('b-range', stats.range);
+    }
+
+    // ---- Chart ------------------------------------------------------------
+    var COLORS = ['#2563eb', '#ef4444', '#16a34a', '#ea580c', '#7c3aed', '#f59e0b', '#64748b', '#db2777'];
+    var chart = null;
+
+    function buildDatasets(series) {
+        var keys = Object.keys(series);
+        var allLabels = [];
+        keys.forEach(function (f) {
+            series[f].labels.forEach(function (l) { if (allLabels.indexOf(l) === -1) allLabels.push(l); });
+        });
+        allLabels.sort();
+        var datasets = keys.map(function (f, idx) {
+            var color = COLORS[idx % COLORS.length];
+            var lbls = series[f].labels, vals = series[f].values;
+            var aligned = allLabels.map(function (l) { var i = lbls.indexOf(l); return i >= 0 ? vals[i] : null; });
+            return { label: 'Cavity: ' + f, data: aligned, borderColor: color,
+                     backgroundColor: color + '22', borderWidth: 2, pointRadius: 3, tension: 0.1 };
+        });
+        function refLine(label, value, color, dash) {
+            return { label: label, data: allLabels.map(function () { return value; }), borderColor: color,
+                     borderWidth: 2, borderDash: dash, pointRadius: 0, tension: 0 };
+        }
+        if (USL !== null && LSL !== null) {
+            datasets.push(refLine('USL', USL, '#dc2626', [5, 5]));
+            datasets.push(refLine('LSL', LSL, '#dc2626', [5, 5]));
+        }
+        if (NOMINAL !== null) datasets.push(refLine('Nominal', NOMINAL, '#16a34a', [10, 5]));
+        return { labels: allLabels, datasets: datasets };
+    }
+
+    function renderChart(series) {
+        var d = buildDatasets(series);
+        var yCfg = { title: { display: true, text: 'Average measurement result' } };
+        if (USL !== null && LSL !== null) {
+            var pad = (USL - LSL) * 0.1;
+            yCfg.min = LSL - pad; yCfg.max = USL + pad;
+        }
+        var ctx = document.getElementById('spcChart').getContext('2d');
+        chart = new Chart(ctx, {
+            type: 'line',
+            data: d,
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                animation: { duration: 500, easing: 'easeOutQuart' },
+                plugins: { legend: { position: 'top' }, tooltip: { mode: 'index', intersect: false } },
+                scales: { x: { ticks: { maxRotation: 45, minRotation: 45 } }, y: yCfg }
+            }
+        });
+    }
+
+    function updateChart(series) {
+        var d = buildDatasets(series);
+        chart.data.labels = d.labels;
+        chart.data.datasets.forEach(function (ds, i) { if (d.datasets[i]) ds.data = d.datasets[i].data; });
+        chart.update();
+    }
+
+    // ---- Tweak state ------------------------------------------------------
+    function currentParams() {
+        return {
+            s: parseInt(document.getElementById('squeeze').value, 10) / 100.0,
+            flatten: document.getElementById('flatten').checked,
+            threshold: PICK_THRESHOLD
+        };
+    }
+    function computeTweaked() {
+        var p = currentParams();
+        return SPCTransform.tweakSeries(CURRENT_SERIES, p.s, p.flatten, p.threshold, NOMINAL);
+    }
+    function refresh() {
+        var previewing = document.getElementById('preview-toggle').checked;
+        var series = previewing ? computeTweaked() : CURRENT_SERIES;
+        updateChart(series);
+        setBadges(seriesStats(series), previewing);
+    }
+
+    // ---- Date-range control ----------------------------------------------
+    (function initDateRange() {
+        var minDt = parseLocal(SLIDER.min), maxDt = parseLocal(SLIDER.max);
+        var totalMin = Math.max(1, Math.round((maxDt - minDt) / 60000));
+        var rMin = document.getElementById('range-min'), rMax = document.getElementById('range-max');
+        var sp = document.getElementById('start-picker'), ep = document.getElementById('end-picker');
+        rMin.max = String(totalMin); rMax.max = String(totalMin); rMax.value = String(totalMin);
+
+        function offToDate(off) { return new Date(minDt.getTime() + off * 60000); }
+        function dateToOff(dt) { return Math.round((dt - minDt) / 60000); }
+
+        // Initialise pickers from existing filters or slider extremes.
+        var startDt = FILTERS.date_from ? parseLocal(FILTERS.date_from) : minDt;
+        var endDt = FILTERS.date_to ? parseLocal(FILTERS.date_to) : maxDt;
+        sp.value = fmtDate(startDt); ep.value = fmtDate(endDt);
+        rMin.value = String(Math.min(Math.max(dateToOff(startDt), 0), totalMin));
+        rMax.value = String(Math.min(Math.max(dateToOff(endDt), 0), totalMin));
+
+        function syncPickersFromSliders() {
+            if (parseInt(rMin.value, 10) > parseInt(rMax.value, 10)) {
+                var t = rMin.value; rMin.value = rMax.value; rMax.value = t;
+            }
+            sp.value = fmtDate(offToDate(parseInt(rMin.value, 10)));
+            ep.value = fmtDate(offToDate(parseInt(rMax.value, 10)));
+        }
+        function syncSlidersFromPickers() {
+            if (sp.value) rMin.value = String(Math.min(Math.max(dateToOff(parseLocal(sp.value)), 0), totalMin));
+            if (ep.value) rMax.value = String(Math.min(Math.max(dateToOff(parseLocal(ep.value)), 0), totalMin));
+        }
+
+        rMin.addEventListener('input', syncPickersFromSliders);
+        rMax.addEventListener('input', syncPickersFromSliders);
+        sp.addEventListener('input', syncSlidersFromPickers);
+        ep.addEventListener('input', syncSlidersFromPickers);
+
+        // Auto-refresh the fetch on release (navigate with new date filters).
+        function reload() {
+            var params = new URLSearchParams();
+            if (FILTERS.articolo) params.set('articolo', FILTERS.articolo);
+            if (FILTERS.numero_riferimento) params.set('numero_riferimento', FILTERS.numero_riferimento);
+            if (sp.value) params.set('date_from', sp.value);
+            if (ep.value) params.set('date_to', ep.value);
+            window.location.href = '{{ url_for("spc_tweaks") }}?' + params.toString();
+        }
+        rMin.addEventListener('change', reload);
+        rMax.addEventListener('change', reload);
+        sp.addEventListener('change', reload);
+        ep.addEventListener('change', reload);
+
+        // Time-precision toggles swap the picker between date and datetime-local.
+        function bindTimeToggle(toggleId, picker) {
+            document.getElementById(toggleId).addEventListener('change', function () {
+                var val = picker.value;
+                picker.type = this.checked ? 'datetime-local' : 'date';
+                if (val) picker.value = this.checked ? (val + 'T00:00') : val.split('T')[0];
+            });
+        }
+        bindTimeToggle('start-time-toggle', sp);
+        bindTimeToggle('end-time-toggle', ep);
+    })();
+
+    // ---- Wire controls ----------------------------------------------------
+    document.getElementById('squeeze').addEventListener('input', function () {
+        document.getElementById('squeeze-val').textContent = this.value + '%';
+        if (document.getElementById('preview-toggle').checked) refresh();
+    });
+    document.getElementById('flatten').addEventListener('change', function () {
+        if (document.getElementById('preview-toggle').checked) refresh();
+    });
+    document.getElementById('preview-toggle').addEventListener('change', refresh);
+
+    // ---- Commit -----------------------------------------------------------
+    document.getElementById('commit-btn').addEventListener('click', function () {
+        var p = currentParams();
+        var title = WRITE_ENABLED ? 'Commit tweak to MOSYS?' : 'Preview commit (writes disabled)';
+        var msg = WRITE_ENABLED
+            ? 'This will update the filtered MOSYS measurement records with the tweaked values. This action modifies production data.'
+            : 'Production writes are disabled, so this runs a dry-run only. No records will be changed.';
+        showConfirmModal(null, title, msg, WRITE_ENABLED ? 'Commit' : 'Run dry-run',
+            WRITE_ENABLED ? 'danger' : 'info', function () {
+            var body = {
+                articolo: FILTERS.articolo, numero_riferimento: FILTERS.numero_riferimento,
+                date_from: document.getElementById('start-picker').value.split('T')[0] || FILTERS.date_from,
+                date_to: document.getElementById('end-picker').value.split('T')[0] || FILTERS.date_to,
+                squeeze: p.s, flatten: p.flatten ? '1' : '0', threshold: p.threshold
+            };
+            fetch('{{ url_for("spc_tweaks_commit") }}', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+            }).then(function (r) { return r.json(); }).then(function (data) {
+                if (data.success) showToast(data.message || 'MOSYS records updated', 'success', 2000);
+                else showToast(data.error || 'The update could not be applied.', 'error', 4000);
+            }).catch(function () {
+                showToast('The update could not be applied. No records were changed.', 'error', 4000);
+            });
+        });
+    });
+
+    // ---- Init -------------------------------------------------------------
+    renderChart(CURRENT_SERIES);
+    setBadges(seriesStats(CURRENT_SERIES), false);
+    document.getElementById('squeeze-val').textContent = '0%';
+</script>
+{% endblock %}

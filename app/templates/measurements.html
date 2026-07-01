@@ -1,0 +1,159 @@
+{% extends "base.html" %}
+{% block title %}Measurements — MOSYS{% endblock %}
+{% block header_title %}Measurements{% endblock %}
+
+{% block page_actions %}
+<a href="{{ url_for('spc_tweaks') }}{% if spc_query %}?{{ spc_query }}{% endif %}"
+   class="btn-refined btn-refined-accent btn-press">
+    SPC tweaks
+    <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/>
+    </svg>
+</a>
+{% endblock %}
+
+{% block content %}
+<div class="refined-page">
+    <div class="page-header">
+        <div>
+            <h1 class="page-title">Measurements</h1>
+            <p class="page-subtitle">NRILDIM dimensional measurement results</p>
+        </div>
+    </div>
+
+    <form method="get" action="{{ url_for('measurements') }}"
+          style="display:flex;gap:0.75rem;align-items:flex-end;flex-wrap:wrap;margin-bottom:0.75rem;">
+        <div>
+            <label class="field-label" for="f-articolo">Part number</label>
+            <input class="refined-input" id="f-articolo" name="articolo" style="min-width:12rem;"
+                   value="{{ filters.articolo or '' }}" placeholder="Articolo">
+        </div>
+        <div>
+            <label class="field-label" for="f-from">From date</label>
+            <input class="refined-input" type="date" id="f-from" name="date_from" value="{{ filters.date_from or '' }}">
+        </div>
+        <div>
+            <label class="field-label" for="f-to">To date</label>
+            <input class="refined-input" type="date" id="f-to" name="date_to" value="{{ filters.date_to or '' }}">
+        </div>
+        <div>
+            <label class="field-label" for="f-rif">Dimension ref.</label>
+            <input class="refined-input" id="f-rif" name="numero_riferimento" style="min-width:10rem;"
+                   value="{{ filters.numero_riferimento or '' }}" placeholder="NUMERO_RIFERIMENTO">
+        </div>
+        <button type="submit" class="btn-refined btn-refined-primary btn-press">Apply filters</button>
+    </form>
+
+    {% if error %}
+    <div class="warn-note" role="alert">{{ error }}</div>
+    {% elif not rows %}
+    <div class="info-note">No measurement records for the current filters.</div>
+    {% else %}
+
+    <div class="table-container">
+        <table class="refined-table" id="measTable">
+            <thead>
+                <tr>
+                    {% for col in columns %}
+                    {% set is_mis = col.startswith('MIS') %}
+                    <th data-col="{{ loop.index0 }}"{% if is_mis %} class="mis-head"{% endif %}>
+                        <div class="th-content">
+                            <div class="th-header">
+                                <span>{{ column_labels.get(col, col) }}</span>
+                                <span class="sort-btns">
+                                    <button type="button" class="sort-btn" aria-label="Sort {{ column_labels.get(col, col) }} ascending"
+                                            onclick="sortMeas({{ loop.index0 }}, 'asc', this)">▲</button>
+                                    <button type="button" class="sort-btn" aria-label="Sort {{ column_labels.get(col, col) }} descending"
+                                            onclick="sortMeas({{ loop.index0 }}, 'desc', this)">▼</button>
+                                </span>
+                            </div>
+                            <input type="text" class="column-search" placeholder="Search…"
+                                   aria-label="Search {{ column_labels.get(col, col) }}"
+                                   oninput="filterMeas()" onclick="event.stopPropagation()">
+                        </div>
+                    </th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in rows %}
+                <tr>
+                    {% for col in columns %}
+                    {% if col.startswith('MIS') %}
+                    <td class="num">{% if row[col] is not none and row[col] == row[col] %}{{ "%.3f"|format(row[col]) }}{% endif %}</td>
+                    {% else %}
+                    <td>{{ row[col] if row[col] is not none else '' }}</td>
+                    {% endif %}
+                    {% endfor %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="table-footer">
+        <div class="footer-item">
+            <span class="footer-label">Total rows</span>
+            <span class="footer-value">{{ footer.total_rows }}</span>
+        </div>
+        <div class="footer-item">
+            <span class="footer-label">Avg min</span>
+            <span class="footer-value">{{ '%.3f'|format(footer.avg_min) if footer.avg_min is not none else '—' }}</span>
+        </div>
+        <div class="footer-item">
+            <span class="footer-label">Avg max</span>
+            <span class="footer-value">{{ '%.3f'|format(footer.avg_max) if footer.avg_max is not none else '—' }}</span>
+        </div>
+        <div class="footer-item">
+            <span class="footer-label">Avg range</span>
+            <span class="footer-value">{{ '%.3f'|format(footer.avg_range) if footer.avg_range is not none else '—' }}</span>
+        </div>
+        <div class="footer-item" style="margin-left:auto;">
+            <span class="footer-label">Grouped by cavity (all rows)</span>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    function filterMeas() {
+        var table = document.getElementById('measTable');
+        if (!table) return;
+        var inputs = table.querySelectorAll('.column-search');
+        var rows = table.tBodies[0].rows;
+        for (var i = 0; i < rows.length; i++) {
+            var show = true;
+            for (var j = 0; j < inputs.length; j++) {
+                var q = inputs[j].value.trim().toUpperCase();
+                if (!q) continue;
+                var cell = rows[i].cells[j];
+                var txt = (cell.textContent || '').trim().toUpperCase();
+                if (txt.indexOf(q) === -1) { show = false; break; }
+            }
+            rows[i].style.display = show ? '' : 'none';
+        }
+    }
+
+    function sortMeas(col, dir, btn) {
+        var table = document.getElementById('measTable');
+        if (!table) return;
+        var tbody = table.tBodies[0];
+        var rows = Array.prototype.slice.call(tbody.rows);
+        rows.sort(function (a, b) {
+            var x = (a.cells[col].textContent || '').trim();
+            var y = (b.cells[col].textContent || '').trim();
+            var xn = parseFloat(x), yn = parseFloat(y);
+            var cmp;
+            if (!isNaN(xn) && !isNaN(yn)) cmp = xn - yn;
+            else cmp = x.toLowerCase() < y.toLowerCase() ? -1 : (x.toLowerCase() > y.toLowerCase() ? 1 : 0);
+            return dir === 'asc' ? cmp : -cmp;
+        });
+        rows.forEach(function (r) { tbody.appendChild(r); });
+        // active-state on the pressed sort button
+        table.querySelectorAll('.sort-btn.is-active').forEach(function (b) { b.classList.remove('is-active'); });
+        if (btn) btn.classList.add('is-active');
+    }
+</script>
+{% endblock %}
