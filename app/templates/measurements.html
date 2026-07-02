@@ -82,7 +82,7 @@
                     {% if col.startswith('MIS') %}
                     <td class="num">{% if row[col] is not none and row[col] == row[col] %}{{ "%.3f"|format(row[col]) }}{% endif %}</td>
                     {% else %}
-                    <td>{{ row[col] if row[col] is not none else '' }}</td>
+                    <td><div class="clamp2">{{ row[col] if row[col] is not none else '' }}</div></td>
                     {% endif %}
                     {% endfor %}
                 </tr>

@@ -8,6 +8,10 @@
     .spc-grid { display: flex; gap: 1rem; align-items: stretch; flex: 1; min-height: 0; }
     .chart-col { flex: 3; min-width: 0; display: flex; flex-direction: column; }
     .chart-wrap { position: relative; flex: 1; min-height: 20rem; }
+    .chart-empty {
+        position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+        text-align: center; color: var(--color-ink-subtle); font-size: 0.9rem; padding: 1rem;
+    }
     .side-col { flex: 1; min-width: 16rem; max-width: 22rem; display: flex; flex-direction: column; gap: 0.75rem; overflow-y: auto; }
     .badge-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
     .control-row { margin-bottom: 0.9rem; }
@@ -53,7 +57,12 @@
 
     <div class="spc-grid">
         <div class="chart-col panel">
-            <div class="chart-wrap"><canvas id="spcChart"></canvas></div>
+            <div class="chart-wrap">
+                <canvas id="spcChart"></canvas>
+                <div id="chart-empty" class="chart-empty" hidden>
+                    No measurements in the selected date range.
+                </div>
+            </div>
         </div>
 
         <div class="side-col">
@@ -224,7 +233,17 @@
         return { labels: allLabels, datasets: datasets };
     }
 
+    function seriesHasData(series) {
+        return Object.keys(series).some(function (f) {
+            return (series[f].values || []).some(function (v) { return v !== null && v !== undefined; });
+        });
+    }
+
     function renderChart(series) {
+        var empty = !seriesHasData(series);
+        document.getElementById('chart-empty').hidden = !empty;
+        document.getElementById('spcChart').style.visibility = empty ? 'hidden' : 'visible';
+        if (empty) { if (chart) { chart.destroy(); chart = null; } return; }
         var d = buildDatasets(series);
         var yCfg = { title: { display: true, text: 'Average measurement result' } };
         if (USL !== null && LSL !== null) {
@@ -245,6 +264,7 @@
     }
 
     function updateChart(series) {
+        if (!chart) return;   // empty state — nothing to update
         var d = buildDatasets(series);
         chart.data.labels = d.labels;
         chart.data.datasets.forEach(function (ds, i) { if (d.datasets[i]) ds.data = d.datasets[i].data; });

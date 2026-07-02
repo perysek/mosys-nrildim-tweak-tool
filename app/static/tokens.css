@@ -405,13 +405,20 @@ input[type="range"].refined-range::-moz-range-thumb {
     border-bottom: 1px solid var(--color-border-subtle);
     font-weight: 300;
     color: var(--color-ink);
-    /* 2-line clamp with minimal padding, tuned for density */
     max-width: 16rem;
-    overflow: hidden;
+    vertical-align: top;
+    line-height: 1.25;
+}
+
+/* The 2-line clamp MUST live on an inner wrapper, not the <td> itself:
+   giving a <td> a non-table-cell display (e.g. -webkit-box) removes it from the
+   table's column-width algorithm, so body cells stop aligning with the headers. */
+.refined-table td .clamp2 {
     display: -webkit-box;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
-    line-height: 1.25;
+    overflow: hidden;
+    word-break: break-word;
 }
 
 .refined-table tbody tr:hover { background: var(--color-surface); }
@@ -420,7 +427,6 @@ input[type="range"].refined-range::-moz-range-thumb {
     font-variant-numeric: tabular-nums;
     text-align: right;
     white-space: nowrap;
-    display: table-cell;
 }
 
 .th-content { display: flex; flex-direction: column; gap: 0.35rem; }
