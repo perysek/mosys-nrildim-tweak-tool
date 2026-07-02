@@ -150,12 +150,17 @@ def _flatten_delta_for_group(avg_values, threshold, nominal):
     return deltas
 
 
-def compute_row_deltas(df, s, flatten=False, threshold=DEFAULT_PICK_THRESHOLD, nominal=None):
+def compute_row_deltas(df, s, shift=0.0, flatten=False, threshold=DEFAULT_PICK_THRESHOLD,
+                       nominal=None):
     """Total per-row display-scale delta to apply to each non-empty MIS cell.
 
-    Applies flatten first (if on), then the squeeze on the de-spiked series
-    (§3.3 / §3.3.1). Returns a dict ``{df_index: delta_float}``. Rows whose
-    MIS_AVG is NaN (all cells empty) get no delta.
+    Applies flatten first (if on), then the squeeze on the de-spiked series, then
+    a uniform ``shift`` added to every present row (§3.3 / §3.3.1 + centering
+    shift). ``shift`` is an absolute display-scale offset (the caller — the SPC
+    page — derives it from the target centering, e.g. nominal - mean); it moves
+    the whole cavity cloud without changing its spread, so it tunes Cpk (not Cp).
+    Returns a dict ``{df_index: delta_float}``. Rows whose MIS_AVG is NaN (all
+    cells empty) get no delta.
     """
     result = {}
     if df is None or df.empty or 'NUMERO_FIGURA' not in df.columns:
@@ -187,15 +192,17 @@ def compute_row_deltas(df, s, flatten=False, threshold=DEFAULT_PICK_THRESHOLD, n
             if flattened_avg[k] is None:
                 continue
             sdelta = s * (mbar - flattened_avg[k]) if (mbar is not None and s) else 0.0
-            total = fdeltas[k] + sdelta
+            # 3) uniform centering shift (same value on every present row)
+            total = fdeltas[k] + sdelta + shift
             if total != 0.0:
                 result[i] = total
     return result
 
 
-def tweaked_series(df, s, flatten=False, threshold=DEFAULT_PICK_THRESHOLD, nominal=None):
+def tweaked_series(df, s, shift=0.0, flatten=False, threshold=DEFAULT_PICK_THRESHOLD, nominal=None):
     """Per-NUMERO_FIGURA chart series AFTER applying the tweak (for preview/verify)."""
-    deltas = compute_row_deltas(df, s, flatten=flatten, threshold=threshold, nominal=nominal)
+    deltas = compute_row_deltas(df, s, shift=shift, flatten=flatten, threshold=threshold,
+                                nominal=nominal)
     base_avg = df['MIS_AVG'] if 'MIS_AVG' in df.columns else df[_mis_in(df)].mean(axis=1, skipna=True)
     new_avg = base_avg.copy()
     for i, d in deltas.items():
@@ -203,7 +210,8 @@ def tweaked_series(df, s, flatten=False, threshold=DEFAULT_PICK_THRESHOLD, nomin
     return group_series(df.assign(MIS_AVG=new_avg))
 
 
-def compute_tweaked_updates(df, s, flatten=False, threshold=DEFAULT_PICK_THRESHOLD, nominal=None):
+def compute_tweaked_updates(df, s, shift=0.0, flatten=False, threshold=DEFAULT_PICK_THRESHOLD,
+                            nominal=None):
     """Build the safe-write update payload from a tweak.
 
     Returns a list of update dicts::
@@ -216,7 +224,8 @@ def compute_tweaked_updates(df, s, flatten=False, threshold=DEFAULT_PICK_THRESHO
     via ``round(new_display * MIS_SCALE)`` (§2.1 round-trip contract).
     """
     updates = []
-    deltas = compute_row_deltas(df, s, flatten=flatten, threshold=threshold, nominal=nominal)
+    deltas = compute_row_deltas(df, s, shift=shift, flatten=flatten, threshold=threshold,
+                                nominal=nominal)
     if not deltas:
         return updates
     mis_in = _mis_in(df)

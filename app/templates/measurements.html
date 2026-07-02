@@ -3,7 +3,7 @@
 {% block header_title %}Measurements{% endblock %}
 
 {% block page_actions %}
-<a href="{{ url_for('spc_tweaks') }}{% if spc_query %}?{{ spc_query }}{% endif %}"
+<a id="spc-link" href="{{ url_for('spc_tweaks') }}{% if spc_query %}?{{ spc_query }}{% endif %}"
    class="btn-refined btn-refined-accent btn-press">
     SPC tweaks
     <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
@@ -68,6 +68,7 @@
                                 </span>
                             </div>
                             <input type="text" class="column-search" placeholder="Search…"
+                                   data-colname="{{ col }}"
                                    aria-label="Search {{ column_labels.get(col, col) }}"
                                    oninput="filterMeas()" onclick="event.stopPropagation()">
                         </div>
@@ -155,5 +156,63 @@
         table.querySelectorAll('.sort-btn.is-active').forEach(function (b) { b.classList.remove('is-active'); });
         if (btn) btn.classList.add('is-active');
     }
+
+    // ---- Filter state memory + cavity hand-off to SPC Tweaks --------------
+    (function persistState() {
+        var KEY = 'meas_state';
+        var FIELDS = ['articolo', 'date_from', 'date_to', 'numero_riferimento'];
+        var form = document.querySelector('form');
+        var searches = Array.prototype.slice.call(document.querySelectorAll('.column-search'));
+
+        function colInput(name) {
+            for (var i = 0; i < searches.length; i++) {
+                if (searches[i].getAttribute('data-colname') === name) return searches[i];
+            }
+            return null;
+        }
+        function save() {
+            var st = { form: {}, cols: {} };
+            FIELDS.forEach(function (n) {
+                var el = form && form.querySelector('[name="' + n + '"]');
+                if (el) st.form[n] = el.value;
+            });
+            searches.forEach(function (inp) { st.cols[inp.getAttribute('data-colname')] = inp.value; });
+            try { sessionStorage.setItem(KEY, JSON.stringify(st)); } catch (e) { /* ignore */ }
+        }
+        function restore() {
+            var raw; try { raw = sessionStorage.getItem(KEY); } catch (e) { return; }
+            if (!raw) return;
+            var st; try { st = JSON.parse(raw); } catch (e) { return; }
+            if (st.form) FIELDS.forEach(function (n) {   // only fill empties; don't clobber a URL filter
+                var el = form && form.querySelector('[name="' + n + '"]');
+                if (el && !el.value && st.form[n]) el.value = st.form[n];
+            });
+            if (st.cols) searches.forEach(function (inp) {
+                var v = st.cols[inp.getAttribute('data-colname')];
+                if (v) inp.value = v;
+            });
+        }
+        function updateSpcLink() {
+            var link = document.getElementById('spc-link');
+            if (!link) return;
+            var url = new URL(link.getAttribute('href'), window.location.origin);
+            var cav = colInput('NUMERO_FIGURA');
+            if (cav && cav.value.trim()) url.searchParams.set('cavity', cav.value.trim());
+            else url.searchParams.delete('cavity');
+            link.setAttribute('href', url.pathname + url.search);
+        }
+
+        restore();
+        if (typeof filterMeas === 'function') filterMeas();
+        updateSpcLink();
+        searches.forEach(function (inp) {
+            inp.addEventListener('input', function () { save(); updateSpcLink(); });
+        });
+        if (form) {
+            form.addEventListener('submit', save);
+            Array.prototype.forEach.call(form.querySelectorAll('input'),
+                function (el) { el.addEventListener('change', save); });
+        }
+    })();
 </script>
 {% endblock %}

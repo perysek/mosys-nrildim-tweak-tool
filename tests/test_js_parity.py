@@ -43,18 +43,19 @@ def _series_to_df(series):
 
 @unittest.skipIf(shutil.which('node') is None, "node not available")
 class JsParityTests(unittest.TestCase):
-    def _run_js(self, s, flatten, threshold, nominal):
-        payload = json.dumps({'series': SERIES, 's': s, 'flatten': flatten,
+    def _run_js(self, s, shift, flatten, threshold, nominal):
+        payload = json.dumps({'series': SERIES, 's': s, 'shift': shift, 'flatten': flatten,
                               'threshold': threshold, 'nominal': nominal})
         proc = subprocess.run(['node', _RUNNER], input=payload, capture_output=True,
                               text=True, timeout=30)
         self.assertEqual(proc.returncode, 0, proc.stderr)
         return json.loads(proc.stdout)
 
-    def _assert_parity(self, s, flatten, threshold=0.25, nominal=NOMINAL):
+    def _assert_parity(self, s, flatten, shift=0.0, threshold=0.25, nominal=NOMINAL):
         df = _series_to_df(SERIES)
-        py = spc.tweaked_series(df, s, flatten=flatten, threshold=threshold, nominal=nominal)
-        js = self._run_js(s, flatten, threshold, nominal)
+        py = spc.tweaked_series(df, s, shift=shift, flatten=flatten, threshold=threshold,
+                                nominal=nominal)
+        js = self._run_js(s, shift, flatten, threshold, nominal)
         self.assertEqual(set(py.keys()), set(js.keys()))
         for figura in py:
             pv, jv = py[figura]['values'], js[figura]['values']
@@ -74,6 +75,12 @@ class JsParityTests(unittest.TestCase):
 
     def test_parity_no_op(self):
         self._assert_parity(0.0, False)
+
+    def test_parity_shift_only(self):
+        self._assert_parity(0.0, False, shift=0.15)
+
+    def test_parity_squeeze_and_shift(self):
+        self._assert_parity(0.4, False, shift=-0.2)
 
 
 if __name__ == '__main__':

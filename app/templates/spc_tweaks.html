@@ -12,6 +12,7 @@
         position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
         text-align: center; color: var(--color-ink-subtle); font-size: 0.9rem; padding: 1rem;
     }
+    .chart-empty[hidden] { display: none; }
     .side-col { flex: 1; min-width: 16rem; max-width: 22rem; display: flex; flex-direction: column; gap: 0.75rem; overflow-y: auto; }
     .badge-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
     .control-row { margin-bottom: 0.9rem; }
@@ -23,8 +24,19 @@
     .dual-slider input[type=range]::-moz-range-thumb { pointer-events: auto; }
     .dual-track { position: absolute; top: 0.65rem; left: 0; right: 0; height: 4px; background: var(--color-border); border-radius: 999px; }
     .date-pickers { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.5rem; }
-    .picker-line { display: flex; align-items: center; gap: 0.5rem; }
-    .picker-line label { font-size: 0.72rem; color: var(--color-ink-subtle); width: 2.6rem; }
+    /* #4 fix: let the date input shrink and the time switch stay whole so the
+       'time' caption never overflows the Adjustments panel. */
+    .picker-line { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+    .picker-line > label { font-size: 0.72rem; color: var(--color-ink-subtle); width: 2.6rem; flex-shrink: 0; }
+    .picker-line .refined-input { flex: 1 1 6rem; min-width: 0; }
+    .picker-line .switch { flex-shrink: 0; font-size: 0.72rem; }
+    /* Tolerance readout (#3) */
+    .tol-readout { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.4rem; margin-bottom: 0.6rem; }
+    .tol-cell { text-align: center; padding: 0.35rem 0.25rem; border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface); }
+    .tol-cell .tol-label { display: block; font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--color-ink-subtle); }
+    .tol-cell .tol-value { display: block; font-variant-numeric: tabular-nums; font-weight: 600; font-size: 0.9rem; }
+    .cavity-select { width: 100%; }
+    .shift-note { font-size: 0.68rem; color: var(--color-ink-subtle); margin-top: 0.25rem; }
     .spc-actions {
         display: flex; justify-content: flex-end; align-items: center; gap: 0.75rem;
         margin-top: 0.75rem; flex-shrink: 0;
@@ -67,7 +79,27 @@
 
         <div class="side-col">
             <div class="panel">
+                <p class="panel-title">Cavity</p>
+                <select id="cavity-select" class="refined-input cavity-select"
+                        aria-label="Cavity (NUMERO_FIGURA) shown in chart and stats">
+                    <!-- options injected by JS from the available cavities -->
+                </select>
+                <p class="shift-note">Stats and chart are computed for the selected cavity only.</p>
+            </div>
+
+            <div class="panel">
                 <p class="panel-title">Capability &amp; spread</p>
+                <div class="tol-readout">
+                    <div class="tol-cell"><span class="tol-label">Nominal</span>
+                        <span class="tol-value">{{ '%.3f'|format(nominal) if nominal is not none else '—' }}</span></div>
+                    <div class="tol-cell"><span class="tol-label">LSL</span>
+                        <span class="tol-value">{{ '%.3f'|format(lsl) if lsl is not none else '—' }}</span></div>
+                    <div class="tol-cell"><span class="tol-label">USL</span>
+                        <span class="tol-value">{{ '%.3f'|format(usl) if usl is not none else '—' }}</span></div>
+                </div>
+                {% if nominal is none %}
+                <p class="shift-note">No tolerance for this dimension — pick a NUMERO_RIFERIMENTO to load Nominal/USL/LSL.</p>
+                {% endif %}
                 <div class="badge-grid">
                     <div class="stat-badge"><span class="stat-label">Cp</span><span class="stat-value" id="b-cp">—</span></div>
                     <div class="stat-badge"><span class="stat-label">Cpk</span><span class="stat-value" id="b-cpk">—</span></div>
@@ -85,6 +117,13 @@
                     <label class="field-label" for="squeeze">Spread squeeze — <span class="range-value" id="squeeze-val">0%</span></label>
                     <input type="range" id="squeeze" class="refined-range" min="0" max="90" step="1" value="0"
                            aria-label="Spread squeeze percentage">
+                </div>
+
+                <div class="control-row">
+                    <label class="field-label" for="shift">Center shift — <span class="range-value" id="shift-val">0%</span></label>
+                    <input type="range" id="shift" class="refined-range" min="-100" max="100" step="1" value="0"
+                           aria-label="Center shift percentage" {% if nominal is none %}disabled{% endif %}>
+                    <p class="shift-note">+100% moves the cavity mean onto Nominal (tunes Cpk); Cp is set by squeeze.</p>
                 </div>
 
                 <div class="control-row">
@@ -161,6 +200,38 @@
         date_to: {{ (filters.date_to or '')|tojson }}
     };
     var SLIDER = { min: {{ slider.min|tojson }}, max: {{ slider.max|tojson }} };
+    var SELECTED_CAVITY = {{ (selected_cavity or '')|tojson }};
+
+    // ---- Cavity view state (#0: stats + chart are per-cavity) -------------
+    var CAVITIES = Object.keys(CURRENT_SERIES);
+    // Default to the carried cavity if present, else the first available one.
+    var activeCavity = (SELECTED_CAVITY && CURRENT_SERIES[SELECTED_CAVITY]) ? SELECTED_CAVITY
+                     : (CAVITIES.length ? CAVITIES[0] : '');
+
+    function pickSeries(series) {
+        // Restrict a full multi-cavity series object to the active cavity.
+        if (activeCavity === '__ALL__' || !activeCavity) return series;
+        var out = {};
+        if (series[activeCavity]) out[activeCavity] = series[activeCavity];
+        return out;
+    }
+    function activeMean() {
+        var s = pickSeries(CURRENT_SERIES), vals = [];
+        Object.keys(s).forEach(function (f) {
+            (s[f].values || []).forEach(function (v) { if (v !== null && v !== undefined) vals.push(v); });
+        });
+        if (!vals.length) return null;
+        return vals.reduce(function (a, b) { return a + b; }, 0) / vals.length;
+    }
+    // Center-shift slider (t in [-100,100]) -> absolute offset. +100% lands the
+    // active cavity mean exactly on Nominal. Zero / no-nominal => no shift.
+    function shiftOffset() {
+        var t = parseInt(document.getElementById('shift').value, 10) / 100.0;
+        if (!t || NOMINAL === null) return 0;
+        var m = activeMean();
+        if (m === null) return 0;
+        return t * (NOMINAL - m);
+    }
 
     // ---- Local-time date parsing (per date-formatting rule) --------------
     function parseLocal(str) {
@@ -218,8 +289,11 @@
             var color = COLORS[idx % COLORS.length];
             var lbls = series[f].labels, vals = series[f].values;
             var aligned = allLabels.map(function (l) { var i = lbls.indexOf(l); return i >= 0 ? vals[i] : null; });
+            // TASK2: connect points with a line; spanGaps bridges the nulls that
+            // appear when multiple cavities share a union of x-labels.
             return { label: 'Cavity: ' + f, data: aligned, borderColor: color,
-                     backgroundColor: color + '22', borderWidth: 2, pointRadius: 3, tension: 0.1 };
+                     backgroundColor: color + '22', borderWidth: 2, pointRadius: 3, tension: 0.1,
+                     showLine: true, spanGaps: true };
         });
         function refLine(label, value, color, dash) {
             return { label: label, data: allLabels.map(function () { return value; }), borderColor: color,
@@ -239,17 +313,44 @@
         });
     }
 
-    function renderChart(series) {
+    // #2 fix: compute a STABLE y-range once per render that spans the original
+    // data, the tolerance band, and the full reach of the shift slider, so
+    // preview/squeeze/shift only move points — the axis ticks never jump, and
+    // out-of-spec points (e.g. an un-flattened pick) are never clipped off-chart.
+    function stableYRange(originalActive) {
+        var vals = [];
+        Object.keys(originalActive).forEach(function (f) {
+            (originalActive[f].values || []).forEach(function (v) {
+                if (v !== null && v !== undefined) vals.push(v);
+            });
+        });
+        var lo = [], hi = [];
+        if (vals.length) { lo.push(Math.min.apply(null, vals)); hi.push(Math.max.apply(null, vals)); }
+        if (USL !== null) hi.push(USL);
+        if (LSL !== null) lo.push(LSL);
+        if (NOMINAL !== null) { lo.push(NOMINAL); hi.push(NOMINAL); }
+        if (!lo.length) return {};
+        var dmin = Math.min.apply(null, lo), dmax = Math.max.apply(null, hi);
+        // Reach of the centering shift: at +/-100% the mean can move to nominal.
+        var reach = 0;
+        if (NOMINAL !== null && vals.length) {
+            var m = vals.reduce(function (a, b) { return a + b; }, 0) / vals.length;
+            reach = Math.abs(NOMINAL - m);
+        }
+        var pad = (dmax - dmin) * 0.1 + reach + 1e-6;
+        return { min: dmin - pad, max: dmax + pad };
+    }
+
+    function renderChart(series, originalActive) {
         var empty = !seriesHasData(series);
         document.getElementById('chart-empty').hidden = !empty;
         document.getElementById('spcChart').style.visibility = empty ? 'hidden' : 'visible';
         if (empty) { if (chart) { chart.destroy(); chart = null; } return; }
         var d = buildDatasets(series);
         var yCfg = { title: { display: true, text: 'Average measurement result' } };
-        if (USL !== null && LSL !== null) {
-            var pad = (USL - LSL) * 0.1;
-            yCfg.min = LSL - pad; yCfg.max = USL + pad;
-        }
+        var yr = stableYRange(originalActive || series);
+        if (yr.min !== undefined) { yCfg.min = yr.min; yCfg.max = yr.max; }
+        if (chart) { chart.destroy(); chart = null; }
         var ctx = document.getElementById('spcChart').getContext('2d');
         chart = new Chart(ctx, {
             type: 'line',
@@ -263,30 +364,45 @@
         });
     }
 
-    function updateChart(series) {
+    // `animate=false` -> chart.update('none') so slider drags don't replay the
+    // 500ms animation (that lag was the "points don't match ticks" jitter, #2).
+    function updateChart(series, animate) {
         if (!chart) return;   // empty state — nothing to update
         var d = buildDatasets(series);
         chart.data.labels = d.labels;
         chart.data.datasets.forEach(function (ds, i) { if (d.datasets[i]) ds.data = d.datasets[i].data; });
-        chart.update();
+        chart.update(animate ? undefined : 'none');
     }
 
     // ---- Tweak state ------------------------------------------------------
     function currentParams() {
         return {
             s: parseInt(document.getElementById('squeeze').value, 10) / 100.0,
+            shift: shiftOffset(),
             flatten: document.getElementById('flatten').checked,
             threshold: PICK_THRESHOLD
         };
     }
     function computeTweaked() {
         var p = currentParams();
-        return SPCTransform.tweakSeries(CURRENT_SERIES, p.s, p.flatten, p.threshold, NOMINAL);
+        return SPCTransform.tweakSeries(pickSeries(CURRENT_SERIES), p.s, p.shift, p.flatten,
+                                        p.threshold, NOMINAL);
     }
-    function refresh() {
+    function currentSeries() {
         var previewing = document.getElementById('preview-toggle').checked;
-        var series = previewing ? computeTweaked() : CURRENT_SERIES;
-        updateChart(series);
+        return previewing ? computeTweaked() : pickSeries(CURRENT_SERIES);
+    }
+    // Full re-render (recompute the stable y-range) — for cavity switch / init.
+    function renderView() {
+        var previewing = document.getElementById('preview-toggle').checked;
+        renderChart(currentSeries(), pickSeries(CURRENT_SERIES));
+        setBadges(seriesStats(currentSeries()), previewing);
+    }
+    // Light update (keep axis) — for slider drags (animate=false) / toggle (true).
+    function refresh(animate) {
+        var previewing = document.getElementById('preview-toggle').checked;
+        var series = currentSeries();
+        updateChart(series, animate);
         setBadges(seriesStats(series), previewing);
     }
 
@@ -332,6 +448,7 @@
             if (FILTERS.numero_riferimento) params.set('numero_riferimento', FILTERS.numero_riferimento);
             if (sp.value) params.set('date_from', sp.value);
             if (ep.value) params.set('date_to', ep.value);
+            if (activeCavity && activeCavity !== '__ALL__') params.set('cavity', activeCavity);
             window.location.href = '{{ url_for("spc_tweaks") }}?' + params.toString();
         }
         rMin.addEventListener('change', reload);
@@ -351,15 +468,41 @@
         bindTimeToggle('end-time-toggle', ep);
     })();
 
+    // ---- Cavity dropdown --------------------------------------------------
+    (function initCavity() {
+        var sel = document.getElementById('cavity-select');
+        CAVITIES.forEach(function (f) {
+            var o = document.createElement('option');
+            o.value = f; o.textContent = 'Cavity ' + f;
+            sel.appendChild(o);
+        });
+        if (CAVITIES.length > 1) {
+            var all = document.createElement('option');
+            all.value = '__ALL__'; all.textContent = 'All cavities';
+            sel.appendChild(all);
+        }
+        sel.value = activeCavity || (CAVITIES[0] || '');
+        sel.addEventListener('change', function () {
+            activeCavity = this.value;
+            document.getElementById('shift').value = 0;              // shift is per-cavity
+            document.getElementById('shift-val').textContent = '0%';
+            renderView();                                            // full re-render (new y-range)
+        });
+    })();
+
     // ---- Wire controls ----------------------------------------------------
     document.getElementById('squeeze').addEventListener('input', function () {
         document.getElementById('squeeze-val').textContent = this.value + '%';
-        if (document.getElementById('preview-toggle').checked) refresh();
+        if (document.getElementById('preview-toggle').checked) refresh(false);
+    });
+    document.getElementById('shift').addEventListener('input', function () {
+        document.getElementById('shift-val').textContent = this.value + '%';
+        if (document.getElementById('preview-toggle').checked) refresh(false);
     });
     document.getElementById('flatten').addEventListener('change', function () {
-        if (document.getElementById('preview-toggle').checked) refresh();
+        if (document.getElementById('preview-toggle').checked) refresh(true);
     });
-    document.getElementById('preview-toggle').addEventListener('change', refresh);
+    document.getElementById('preview-toggle').addEventListener('change', function () { refresh(true); });
 
     // ---- Commit -----------------------------------------------------------
     document.getElementById('commit-btn').addEventListener('click', function () {
@@ -374,7 +517,8 @@
                 articolo: FILTERS.articolo, numero_riferimento: FILTERS.numero_riferimento,
                 date_from: document.getElementById('start-picker').value.split('T')[0] || FILTERS.date_from,
                 date_to: document.getElementById('end-picker').value.split('T')[0] || FILTERS.date_to,
-                squeeze: p.s, flatten: p.flatten ? '1' : '0', threshold: p.threshold
+                cavity: (activeCavity && activeCavity !== '__ALL__') ? activeCavity : '',
+                squeeze: p.s, shift: p.shift, flatten: p.flatten ? '1' : '0', threshold: p.threshold
             };
             fetch('{{ url_for("spc_tweaks_commit") }}', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
@@ -388,8 +532,8 @@
     });
 
     // ---- Init -------------------------------------------------------------
-    renderChart(CURRENT_SERIES);
-    setBadges(seriesStats(CURRENT_SERIES), false);
     document.getElementById('squeeze-val').textContent = '0%';
+    document.getElementById('shift-val').textContent = '0%';
+    renderView();   // renders the active cavity with a stable y-range
 </script>
 {% endblock %}

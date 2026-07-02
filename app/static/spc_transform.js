@@ -43,9 +43,11 @@
     }
 
     // Returns tweaked series in the same shape as the input.
-    function tweakSeries(series, s, flatten, threshold, nominal) {
+    // `shift` is a uniform display-scale offset added to every point (centering).
+    function tweakSeries(series, s, shift, flatten, threshold, nominal) {
         if (threshold === undefined || threshold === null) threshold = DEFAULT_PICK_THRESHOLD;
         s = s || 0;
+        shift = shift || 0;
         var out = {};
         Object.keys(series).forEach(function (figura) {
             var labels = series[figura].labels;
@@ -56,7 +58,7 @@
             var mbar = (s && flattened.length) ? mean(flattened) : null;
             var newValues = values.map(function (v, k) {
                 var sdelta = (mbar !== null && s) ? s * (mbar - flattened[k]) : 0.0;
-                var total = fdeltas[k] + sdelta;
+                var total = fdeltas[k] + sdelta + shift;
                 return Math.round((v + total) * 1000) / 1000;
             });
             out[figura] = { labels: labels.slice(), values: newValues };

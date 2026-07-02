@@ -8,6 +8,6 @@ let input = '';
 process.stdin.on('data', function (d) { input += d; });
 process.stdin.on('end', function () {
     const cfg = JSON.parse(input);
-    const out = SPC.tweakSeries(cfg.series, cfg.s, cfg.flatten, cfg.threshold, cfg.nominal);
+    const out = SPC.tweakSeries(cfg.series, cfg.s, cfg.shift, cfg.flatten, cfg.threshold, cfg.nominal);
     process.stdout.write(JSON.stringify(out));
 });

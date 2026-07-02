@@ -113,6 +113,7 @@ def spc_tweaks():
         slider=slider,
         write_enabled=bool(app.config.get('WRITE_ENABLED')),
         offline_demo=demo,
+        selected_cavity=(request.args.get('cavity') or ''),
         error=error,
     )
 
@@ -127,19 +128,28 @@ def spc_tweaks_commit():
         squeeze = float(payload.get('squeeze', 0) or 0)
     except (TypeError, ValueError):
         squeeze = 0.0
+    try:
+        shift = float(payload.get('shift', 0) or 0)
+    except (TypeError, ValueError):
+        shift = 0.0
     flatten = str(payload.get('flatten', '')).strip().lower() in {'1', 'true', 'on', 'yes'}
     try:
         threshold = float(payload.get('threshold', spc.DEFAULT_PICK_THRESHOLD))
     except (TypeError, ValueError):
         threshold = spc.DEFAULT_PICK_THRESHOLD
+    cavity = (payload.get('cavity') or '').strip()
 
     write_enabled = bool(app.config.get('WRITE_ENABLED'))
     demo = _offline_demo()
     try:
         df = mosys_data.fetch_measurements(filters, offline_demo=demo)
         tol = mosys_data.fetch_tolerance(filters.get('numero_riferimento'), offline_demo=demo)
+        # Scope the write to the selected cavity (matches what the user saw on the
+        # chart). Without this a commit would tweak every cavity in the filter.
+        if cavity and df is not None and not df.empty and 'NUMERO_FIGURA' in df.columns:
+            df = df[df['NUMERO_FIGURA'].astype(str) == cavity]
         updates = spc.compute_tweaked_updates(
-            df, squeeze, flatten=flatten, threshold=threshold, nominal=tol['nominal'])
+            df, squeeze, shift=shift, flatten=flatten, threshold=threshold, nominal=tol['nominal'])
         # dry_run is True unless production writes are explicitly enabled.
         report = execute_nrildim_updates(updates, dry_run=(not write_enabled))
     except WriteError as exc:
