@@ -26,6 +26,13 @@
 > To click-test the UI on a laptop with no DB:
 > `MOSYS_OFFLINE_DEMO=true ./venv/Scripts/python.exe app.py` → open
 > `/measurements?articolo=ART-1&numero_riferimento=5001`.
+>
+> **Go-live CLI:** `scripts/mosys_cli.py` runs the go-live gate from a terminal
+> on the RDP (DSN live). It reuses the app's real read + safe-write code, so a
+> green run proves the actual code against pyodbc. Dry-run is the default;
+> `--commit` needs a tweak + typed confirmation + refuses >`--max-write` rows
+> (default 1) for the supervised one-row smoke. Examples in its module docstring.
+> `.\venv\Scripts\python.exe scripts\mosys_cli.py --articolo ART-1 --from-date 2025-01-01 --to-date 2025-03-30`
 
 
 **Date:** 2026-07-01 (overnight autonomous session)
