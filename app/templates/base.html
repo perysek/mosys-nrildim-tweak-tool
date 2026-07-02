@@ -35,6 +35,13 @@
             </header>
 
             <main class="shell-content" id="main-content">
+                {% if offline_demo %}
+                <div class="demo-banner" role="status">
+                    <strong>OFFLINE SAMPLE DATA</strong>
+                    — the live MOSYS database is not connected. These figures are
+                    fabricated for UI testing only and must not be trusted or written back.
+                </div>
+                {% endif %}
                 {% block content %}{% endblock %}
             </main>
         </div>

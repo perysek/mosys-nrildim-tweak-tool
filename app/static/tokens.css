@@ -522,6 +522,25 @@ input[type="range"].refined-range::-moz-range-thumb {
     font-size: 0.8125rem;
 }
 
+/* Persistent offline-demo banner — deliberately loud so fabricated sample data
+   is never mistaken for real MOSYS data. */
+.demo-banner {
+    padding: 0.55rem 0.9rem;
+    margin-bottom: 1rem;
+    background: repeating-linear-gradient(
+        45deg, #fdf3d6, #fdf3d6 12px, #fbecc0 12px, #fbecc0 24px);
+    border: 1px solid var(--color-accent-deep);
+    border-left: 4px solid var(--color-accent-deep);
+    border-radius: var(--radius-sm);
+    color: #6b4e00;
+    font-size: 0.8125rem;
+    line-height: 1.4;
+}
+.demo-banner strong {
+    letter-spacing: 0.04em;
+    color: var(--color-accent-deep);
+}
+
 /* --------------------------------------------------------------- Scrollbars */
 
 .table-container::-webkit-scrollbar { width: 8px; height: 8px; }

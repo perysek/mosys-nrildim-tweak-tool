@@ -14,12 +14,21 @@ display-formatted values (§2.4).
 """
 
 import logging
+import os
+import sqlite3
 
 import pandas as pd
 
 from app.functions.mosys import get_pervasive
 
 logger = logging.getLogger(__name__)
+
+# Offline-demo data source (see config.OFFLINE_DEMO). Fabricated sample data for
+# click-testing the UI WITHOUT the Pervasive DSN. Never a stand-in for real data
+# — callers must pass offline_demo=True explicitly, and the pages banner it.
+_OFFLINE_DB = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    'app', 'data', 'mock_mosys_synthetic.sqlite')
 
 # MIS raw<->display scale factor. Authoritative = 10000 (routes.py L176/L268);
 # spec.md's "1000" was a documentation typo (IMPLEMENTATION-PLAN.md §2.1).
@@ -163,30 +172,24 @@ def valid_mis_columns(df):
     return [c for c in MIS_COLS if c in df.columns and df[c].notna().any()]
 
 
-def fetch_measurements(filters):
-    """Fetch + format the filtered NRILDIM data. Returns a formatted DataFrame."""
+def fetch_measurements(filters, offline_demo=False):
+    """Fetch + format the filtered NRILDIM data. Returns a formatted DataFrame.
+
+    When ``offline_demo`` is True the data comes from the fabricated synthetic
+    SQLite (config.OFFLINE_DEMO) instead of the live DB — the live DB is never
+    contacted in that mode, so there is no timeout to wait out.
+    """
+    if offline_demo:
+        return format_measurements(_offline_measurements(filters))
     query, params = build_nrildim_query(filters)
     logger.info("fetch_measurements query=%s params=%s", query, params)
     df = get_pervasive(query, params=params)
     return format_measurements(df)
 
 
-def fetch_tolerance(numero_riferimento):
-    """Fetch VALORE_NOMINALE + USL/LSL from SCHEDIM1 for one dimension.
-
-    Reuses the tolerance-operator math from routes.py L288-336 verbatim. Returns
-    a dict ``{'nominal', 'usl', 'lsl'}`` with None values when unavailable.
-    """
+def _tolerance_from_frame(tol):
+    """Shared tolerance-operator math (routes.py L288-336) over a 1-row frame."""
     result = {'nominal': None, 'usl': None, 'lsl': None}
-    if not numero_riferimento:
-        return result
-
-    query = (
-        "SELECT CODICE_ARTICOLO, RIF_MISURA, UN_MIS, VALORE_NOMINALE, "
-        "SEGNO_TOLL_INF, TOLL_INF, SEGNO_TOLL_SUP, TOLL_SUP "
-        "FROM STAAMPDB.SCHEDIM1 SCHEDIM1 WHERE SCHEDIM1.RIF_MISURA = ?"
-    )
-    tol = get_pervasive(query, params=(numero_riferimento,))
     if tol is None or tol.empty:
         return result
 
@@ -207,3 +210,70 @@ def fetch_tolerance(numero_riferimento):
     result['usl'] = max(limit_inf, limit_sup)
     result['lsl'] = min(limit_inf, limit_sup)
     return result
+
+
+def fetch_tolerance(numero_riferimento, offline_demo=False):
+    """Fetch VALORE_NOMINALE + USL/LSL from SCHEDIM1 for one dimension.
+
+    Reuses the tolerance-operator math from routes.py L288-336 verbatim. Returns
+    a dict ``{'nominal', 'usl', 'lsl'}`` with None values when unavailable.
+    """
+    if not numero_riferimento:
+        return {'nominal': None, 'usl': None, 'lsl': None}
+
+    if offline_demo:
+        return _tolerance_from_frame(_offline_tolerance(numero_riferimento))
+
+    query = (
+        "SELECT CODICE_ARTICOLO, RIF_MISURA, UN_MIS, VALORE_NOMINALE, "
+        "SEGNO_TOLL_INF, TOLL_INF, SEGNO_TOLL_SUP, TOLL_SUP "
+        "FROM STAAMPDB.SCHEDIM1 SCHEDIM1 WHERE SCHEDIM1.RIF_MISURA = ?"
+    )
+    tol = get_pervasive(query, params=(numero_riferimento,))
+    return _tolerance_from_frame(tol)
+
+
+# --------------------------------------------------------------------------
+#  Offline demo readers (fabricated SQLite; only reached when offline_demo=True)
+# --------------------------------------------------------------------------
+
+def _offline_measurements(filters):
+    """Read fabricated NRILDIM rows from the synthetic SQLite, shaped to match
+    the live query (NRILDIM.* + DESCRIZIONE + VALORE_NOMINALE), then filtered."""
+    if not os.path.exists(_OFFLINE_DB):
+        logger.warning("offline demo requested but %s is missing", _OFFLINE_DB)
+        return pd.DataFrame()
+
+    with sqlite3.connect(_OFFLINE_DB) as conn:
+        df = pd.read_sql(
+            "SELECT n.*, s.DESCRIZIONE, sc.VALORE_NOMINALE "
+            "FROM NRILDIM n "
+            "LEFT JOIN NSCHEDIM s ON n.NUMERO_RIFERIMENTO = s.NUMERO_RIFERIMENTO "
+            "LEFT JOIN SCHEDIM1 sc ON n.NUMERO_RIFERIMENTO = sc.RIF_MISURA "
+            "ORDER BY n.DATA_RILEVAMENTO, n.ORA_RILEVAMENTO", conn)
+
+    # Apply the same filters as build_nrildim_query, in-frame (small data set).
+    articolo = filters.get('articolo')
+    if articolo:
+        df = df[df['ARTICOLO'].astype(str).str.startswith(str(articolo))]
+    numero_riferimento = filters.get('numero_riferimento')
+    if numero_riferimento:
+        df = df[df['NUMERO_RIFERIMENTO'].astype(str) == str(numero_riferimento)]
+    date_from = filters.get('date_from')
+    if date_from:
+        df = df[df['DATA_RILEVAMENTO'].astype(str) >= str(date_from).replace('-', '')]
+    date_to = filters.get('date_to')
+    if date_to:
+        df = df[df['DATA_RILEVAMENTO'].astype(str) <= str(date_to).replace('-', '')]
+    return df.reset_index(drop=True)
+
+
+def _offline_tolerance(numero_riferimento):
+    """Read SCHEDIM1 tolerance row for one dimension from the synthetic SQLite."""
+    if not os.path.exists(_OFFLINE_DB):
+        return pd.DataFrame()
+    with sqlite3.connect(_OFFLINE_DB) as conn:
+        return pd.read_sql(
+            "SELECT RIF_MISURA, VALORE_NOMINALE, SEGNO_TOLL_INF, TOLL_INF, "
+            "SEGNO_TOLL_SUP, TOLL_SUP FROM SCHEDIM1 WHERE RIF_MISURA = ?",
+            conn, params=(str(numero_riferimento),))

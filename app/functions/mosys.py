@@ -1,7 +1,9 @@
 import pyodbc
 import pandas as pd
 import logging
+import os
 import uuid
+import concurrent.futures
 from contextlib import contextmanager
 
 from app.functions import nrildim_journal
@@ -11,6 +13,38 @@ logger = logging.getLogger(__name__)
 # Centralize the connection string
 CONNECTION_STRING = (
 	"DSN=STAAMP_DB;ArrayFetchOn=1;ArrayBufferSize=8;TransportHint=TCP;DecimalSymbol=,;;")
+
+# The PSQL/Actian ODBC driver IGNORES pyodbc's timeout= kwarg and
+# SQL_ATTR_LOGIN_TIMEOUT (verified empirically: a failing connect to an
+# unreachable DSN took ~43s regardless). So we bound the connect ourselves by
+# running it on a worker thread and giving up after CONNECT_TIMEOUT seconds.
+# This turns an ~86s two-connect "hang" on /spc-tweaks into a fast, clear error.
+CONNECT_TIMEOUT = int(os.environ.get('MOSYS_DB_CONNECT_TIMEOUT', '6') or '6')
+_connect_pool = concurrent.futures.ThreadPoolExecutor(
+	max_workers=4, thread_name_prefix='pyodbc-connect')
+
+
+def _bounded_connect(conn_str: str, seconds: int):
+	"""pyodbc.connect with a hard wall-clock bound.
+
+	If the connect does not complete within ``seconds`` we abandon it (the DSN
+	is effectively unreachable) and raise a clean ConnectionError. The orphaned
+	attempt keeps running on the pool thread and is closed if/when it finally
+	returns, so we never leak a live handle.
+	"""
+	future = _connect_pool.submit(pyodbc.connect, conn_str)
+	try:
+		return future.result(timeout=seconds)
+	except concurrent.futures.TimeoutError:
+		def _close_late(f):
+			try:
+				f.result().close()
+			except Exception:  # noqa: BLE001 - best-effort cleanup of abandoned handle
+				pass
+		future.add_done_callback(_close_late)
+		raise ConnectionError(
+			f"Database connection did not complete within {seconds}s; "
+			f"the MOSYS database (DSN=STAAMP_DB) is unreachable.")
 
 # Columns forming the NRILDIM natural key (raw, DB-stored form). Keep in sync
 # with mosys_data.NATURAL_KEY_COLS; duplicated here to avoid an import cycle.
@@ -24,9 +58,9 @@ def pervasive_connection(readonly: bool = True):
 	conn_str = f"{CONNECTION_STRING}readonly={'True' if readonly else 'False'};"
 	conn = None
 	try:
-		conn = pyodbc.connect(conn_str)
+		conn = _bounded_connect(conn_str, CONNECT_TIMEOUT)
 		yield conn
-	except pyodbc.Error as e:
+	except (pyodbc.Error, ConnectionError) as e:
 		print(f"Database connection error: {e}")
 		# Re-raise or handle as needed
 		raise

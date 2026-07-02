@@ -1,5 +1,33 @@
 # Morning handoff — MOSYS NRILDIM Tweak Tool (autonomous build)
 
+> ## Follow-up fix (2026-07-02) — offline behaviour of the new pages
+> **Symptom you hit:** with the DB unreachable, `/measurements` / `/spc-tweaks`
+> showed a spinning tab then an empty screen, while the old `/index` "worked"
+> (it silently shows hardcoded fake rows — that's what fooled you into thinking
+> the DB had connected).
+>
+> **Two root causes, both fixed:**
+> 1. **Slow failure.** The PSQL/Actian ODBC driver *ignores* pyodbc's `timeout=`
+>    and `SQL_ATTR_LOGIN_TIMEOUT` — a failing connect took **43 s** (verified),
+>    so `/spc-tweaks` (two connects) hung ~86 s. Now every connect is bounded on
+>    a worker thread (`mosys._bounded_connect`, `MOSYS_DB_CONNECT_TIMEOUT`,
+>    default **6 s**) → fast, clear "database unreachable" error instead of a hang.
+> 2. **No offline data path.** Unlike `routes.py`, the new pages had no mock
+>    fallback. Added an **opt-in OFFLINE DEMO mode** (NOT a silent fallback):
+>    - Enable with env `MOSYS_OFFLINE_DEMO=true`. Default **OFF**.
+>    - Serves fabricated data from `app/data/mock_mosys_synthetic.sqlite`
+>      (run `python scripts/make_synthetic_mock.py` first if missing) — the live
+>      DB is never contacted, so no timeout wait.
+>    - Every page shows a loud **"OFFLINE SAMPLE DATA"** banner.
+>    - **Hard safety interlock:** demo is force-disabled whenever
+>      `MOSYS_WRITE_ENABLED` is true — mock data is never served on a page that
+>      can write to production. Covered by tests (now **32/32**).
+>
+> To click-test the UI on a laptop with no DB:
+> `MOSYS_OFFLINE_DEMO=true ./venv/Scripts/python.exe app.py` → open
+> `/measurements?articolo=ART-1&numero_riferimento=5001`.
+
+
 **Date:** 2026-07-01 (overnight autonomous session)
 **Plan executed:** `IMPLEMENTATION-PLAN.md` (all 6 phases)
 **Status:** All phases implemented. **29/29 offline tests pass.** Production

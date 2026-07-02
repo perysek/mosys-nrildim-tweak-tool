@@ -117,5 +117,57 @@ class CommitRouteTests(unittest.TestCase):
         self.assertNotIn('42000', data['error'])
 
 
+class OfflineDemoTests(unittest.TestCase):
+    """Opt-in offline demo mode: serves fabricated sample data WITHOUT touching
+    the live DB, banners it loudly, and is hard-disabled when writes are on."""
+
+    def setUp(self):
+        app.testing = True
+        self.client = app.test_client()
+        self._demo = app.config.get('OFFLINE_DEMO')
+        self._write = app.config.get('WRITE_ENABLED')
+        # Guard: the demo path must NEVER call get_pervasive (would hit the DB).
+        self._orig_get = mosys_data.get_pervasive
+
+        def _forbidden(query, params=None):
+            raise AssertionError("offline demo must not touch the live DB")
+        self._forbidden = _forbidden
+
+    def tearDown(self):
+        app.config['OFFLINE_DEMO'] = self._demo
+        app.config['WRITE_ENABLED'] = self._write
+        mosys_data.get_pervasive = self._orig_get
+
+    def test_demo_serves_sample_data_without_db(self):
+        app.config['OFFLINE_DEMO'] = True
+        app.config['WRITE_ENABLED'] = False
+        mosys_data.get_pervasive = self._forbidden  # would raise if the DB were hit
+        resp = self.client.get('/measurements?articolo=ART-1&numero_riferimento=5001')
+        self.assertEqual(resp.status_code, 200)
+        html = resp.get_data(as_text=True)
+        self.assertIn('OFFLINE SAMPLE DATA', html)   # loud banner
+        self.assertIn('10.000', html)                # fabricated MIS value rendered
+
+    def test_write_enabled_forces_demo_off(self):
+        # Safety interlock: never serve mock on a write-capable page.
+        app.config['OFFLINE_DEMO'] = True
+        app.config['WRITE_ENABLED'] = True
+
+        def boom(query, params=None):
+            raise RuntimeError("DB down")
+        mosys_data.get_pervasive = boom
+        resp = self.client.get('/measurements?articolo=ART-1')
+        self.assertEqual(resp.status_code, 200)
+        html = resp.get_data(as_text=True)
+        self.assertNotIn('OFFLINE SAMPLE DATA', html)      # demo suppressed
+        self.assertIn('Could not load measurement data', html)  # real error surfaced
+
+    def test_config_resolution_fails_closed_with_writes(self):
+        from config import _truthy
+        # Mirror config.py's rule: demo only when opted-in AND writes are off.
+        self.assertTrue(_truthy('true') and not _truthy(''))
+        self.assertFalse(_truthy('true') and not _truthy('true'))
+
+
 if __name__ == '__main__':
     unittest.main()

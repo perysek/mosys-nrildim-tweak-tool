@@ -19,3 +19,11 @@ class Config(object):
     # checks pass on the real DSN mock and a supervised one-row smoke test.
     # While False, /spc-tweaks/commit runs the write path in dry-run mode.
     WRITE_ENABLED = _truthy(os.environ.get('MOSYS_WRITE_ENABLED', ''))
+
+    # OFFLINE DEMO MODE — for click-testing the UI without the Pervasive DSN.
+    # When enabled, the read pipeline serves fabricated sample data from
+    # app/data/mock_mosys_synthetic.sqlite instead of the live DB, and the pages
+    # show a persistent "OFFLINE SAMPLE DATA" banner. HARD SAFETY RULE: demo mode
+    # is force-disabled whenever WRITE_ENABLED is true — never serve mock data on
+    # a page that can write to production. Default OFF.
+    OFFLINE_DEMO = _truthy(os.environ.get('MOSYS_OFFLINE_DEMO', '')) and not WRITE_ENABLED

@@ -31,13 +31,22 @@ def _filter_querystring(filters):
     return '&'.join(f"{k}={v}" for k, v in filters.items() if v)
 
 
+def _offline_demo():
+    """True when the read pipeline should serve fabricated sample data.
+
+    config.OFFLINE_DEMO is already force-disabled when WRITE_ENABLED is true;
+    re-checking here keeps the safety rule local and obvious."""
+    return bool(app.config.get('OFFLINE_DEMO')) and not bool(app.config.get('WRITE_ENABLED'))
+
+
 @app.route('/measurements')
 def measurements():
     filters = _current_filters()
+    demo = _offline_demo()
     error = None
     rows, columns, footer = [], [], spc.footer_stats(None)
     try:
-        df = mosys_data.fetch_measurements(filters)
+        df = mosys_data.fetch_measurements(filters, offline_demo=demo)
         if df is not None and not df.empty:
             valid_mis = mosys_data.valid_mis_columns(df)
             columns = [c for c in mosys_data.DISPLAY_COLUMNS
@@ -57,6 +66,7 @@ def measurements():
         footer=footer,
         filters=filters,
         spc_query=_filter_querystring(filters),
+        offline_demo=demo,
         error=error,
     )
 
@@ -64,12 +74,13 @@ def measurements():
 @app.route('/spc-tweaks')
 def spc_tweaks():
     filters = _current_filters()
+    demo = _offline_demo()
     error = None
     current_series, capability, overall, tol = {}, {}, spc.overall_capability(None, None, None), \
         {'nominal': None, 'usl': None, 'lsl': None}
     try:
-        df = mosys_data.fetch_measurements(filters)
-        tol = mosys_data.fetch_tolerance(filters.get('numero_riferimento'))
+        df = mosys_data.fetch_measurements(filters, offline_demo=demo)
+        tol = mosys_data.fetch_tolerance(filters.get('numero_riferimento'), offline_demo=demo)
         if df is not None and not df.empty:
             current_series = spc.group_series(df)
             capability = spc.capability(df, tol['usl'], tol['lsl'])
@@ -101,6 +112,7 @@ def spc_tweaks():
         mis_scale=mosys_data.MIS_SCALE,
         slider=slider,
         write_enabled=bool(app.config.get('WRITE_ENABLED')),
+        offline_demo=demo,
         error=error,
     )
 
@@ -122,9 +134,10 @@ def spc_tweaks_commit():
         threshold = spc.DEFAULT_PICK_THRESHOLD
 
     write_enabled = bool(app.config.get('WRITE_ENABLED'))
+    demo = _offline_demo()
     try:
-        df = mosys_data.fetch_measurements(filters)
-        tol = mosys_data.fetch_tolerance(filters.get('numero_riferimento'))
+        df = mosys_data.fetch_measurements(filters, offline_demo=demo)
+        tol = mosys_data.fetch_tolerance(filters.get('numero_riferimento'), offline_demo=demo)
         updates = spc.compute_tweaked_updates(
             df, squeeze, flatten=flatten, threshold=threshold, nominal=tol['nominal'])
         # dry_run is True unless production writes are explicitly enabled.
