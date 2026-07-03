@@ -32,10 +32,13 @@ PowerShell usage (on the RDP, venv active, STAAMP_DB reachable)
         --articolo ART-1 --from-date 2025-01-01 --to-date 2025-03-30 `
         --numero-riferimento 5001 --squeeze 0.3 --dry-run
 
-    # 3) Supervised ONE-ROW live write (writes to production; asks to confirm):
+    # 3) Supervised ONE-ROW live write (writes to production; asks to confirm).
+    #    Narrow to a single cavity+shot and use --shift (squeeze can't isolate one
+    #    row); --shift 0.001 nudges the value by 0.001 and is reverted with -0.001:
     .\venv\Scripts\python.exe scripts\mosys_cli.py `
         --articolo ART-1 --from-date 2025-06-01 --to-date 2025-06-01 `
-        --numero-riferimento 5001 --squeeze 0.3 --commit
+        --numero-riferimento 5001 --numero-figura 2 --numero-stampata 1 `
+        --shift 0.001 --commit
 """
 
 import argparse
@@ -77,8 +80,16 @@ def _parse_args(argv):
                    help='Latest DATA_RILEVAMENTO, YYYY-MM-DD.')
     p.add_argument('--numero-riferimento', dest='numero_riferimento',
                    help='NUMERO_RIFERIMENTO (dimension) - required for tolerance and any tweak.')
+    p.add_argument('--numero-figura', dest='numero_figura',
+                   help='Cavity filter (NUMERO_FIGURA as displayed, e.g. 2). Applied in-frame.')
+    p.add_argument('--numero-stampata', dest='numero_stampata',
+                   help='Shot filter (NUMERO_STAMPATA as displayed, e.g. 1). Applied in-frame.')
     p.add_argument('--squeeze', type=float, default=0.0,
                    help='Spread-squeeze fraction 0..0.9 (0 = no squeeze).')
+    p.add_argument('--shift', type=float, default=0.0,
+                   help='Uniform display-scale offset added to every selected row '
+                        '(the only tweak that can change EXACTLY ONE row - use for the '
+                        'one-row smoke test, e.g. --shift 0.001).')
     p.add_argument('--flatten', action='store_true',
                    help='Flatten picks (needs a nominal value).')
     p.add_argument('--threshold', type=float, default=spc.DEFAULT_PICK_THRESHOLD,
@@ -228,24 +239,40 @@ def main(argv=None):
 
     formatted = mosys_data.format_measurements(raw_df)
 
+    # In-frame cavity/shot narrowing (the DB query can't filter on these). Indices
+    # of raw_df and formatted align, so we mask on the display columns and keep
+    # both frames in lock-step - this is how you isolate a single row.
+    if args.numero_figura or args.numero_stampata:
+        mask = pd.Series(True, index=formatted.index)
+        if args.numero_figura and 'NUMERO_FIGURA' in formatted.columns:
+            mask &= formatted['NUMERO_FIGURA'].astype(str) == str(args.numero_figura)
+        if args.numero_stampata and 'NUMERO_STAMPATA' in formatted.columns:
+            mask &= formatted['NUMERO_STAMPATA'].astype(str) == str(args.numero_stampata)
+        formatted = formatted[mask]
+        raw_df = raw_df.loc[formatted.index]
+        print(f"After cavity/shot filter: {len(formatted)} row(s).")
+        if formatted.empty:
+            print("Nothing matches that cavity/shot - nothing to show or write.")
+            return 0
+
     _hr('DATA (display values, MIS / 10000)')
     _print_data(formatted, args.limit)
 
     _scale_and_key_gate(raw_df)
 
     # ---- Tweak preview (if requested) ----
-    tweak_requested = args.squeeze > 0 or args.flatten
+    tweak_requested = args.squeeze > 0 or args.flatten or args.shift != 0.0
     updates = []
     if tweak_requested:
         tol = mosys_data.fetch_tolerance(args.numero_riferimento) if args.numero_riferimento \
             else {'nominal': None, 'usl': None, 'lsl': None}
         updates = spc.compute_tweaked_updates(
-            formatted, args.squeeze, flatten=args.flatten,
+            formatted, args.squeeze, shift=args.shift, flatten=args.flatten,
             threshold=args.threshold, nominal=tol['nominal'])
         _print_planned(updates, raw_df)
     else:
         _hr('TWEAK')
-        print("No --squeeze / --flatten given - inspection only.")
+        print("No --squeeze / --flatten / --shift given - inspection only.")
 
     # ---- Dry-run: show the plan via the real write path, never writing ----
     if not writing:
@@ -261,7 +288,7 @@ def main(argv=None):
 
     # ---- Commit path: guard rails ----
     if not tweak_requested:
-        print("\nRefusing to --commit without a tweak (--squeeze and/or --flatten). Nothing written.")
+        print("\nRefusing to --commit without a tweak (--squeeze / --flatten / --shift). Nothing written.")
         return 2
     if not updates:
         print("\nThe tweak changes no cells at these settings - nothing to write.")

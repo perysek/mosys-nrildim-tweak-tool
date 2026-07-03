@@ -60,46 +60,71 @@ COLUMN_LABELS = {
 DISPLAY_COLUMNS = ['DATA_RILEVAMENTO', 'ORA_RILEVAMENTO', 'DESCRIZIONE',
                    'NUMERO_STAMPATA', 'NUMERO_FIGURA'] + MIS_COLS
 
+# Volume guards for the live DB (~4.5M NRILDIM rows). The Measurements browse
+# table pulls at most BROWSE_ROW_CAP rows (newest first) so a no/broad-filter
+# visit can never drag the whole table into pandas/the browser. The SPC page
+# refuses to build OR commit a tweak whose selection exceeds SPC_MAX_ROWS — the
+# preview and the authoritative commit MUST see identical data, so both are
+# bounded by the same ceiling (never by a silent TOP, which would corrupt the
+# squeeze mean). Both are env-overridable for tuning on the RDP.
+BROWSE_ROW_CAP = int(os.environ.get('MOSYS_BROWSE_ROW_CAP', '5000') or '5000')
+SPC_MAX_ROWS = int(os.environ.get('MOSYS_SPC_MAX_ROWS', '50000') or '50000')
 
-def build_nrildim_query(filters):
+
+def _nrildim_where(filters):
+    """Shared WHERE clause + params for the NRILDIM filter (reused by the data
+    query and the COUNT guard so they always agree on what a selection means)."""
+    parts = ["WHERE 1=1"]
+    params = []
+    if filters.get('articolo'):
+        parts.append("AND NRILDIM.ARTICOLO LIKE ?")
+        params.append(f"{filters['articolo']}%")
+    if filters.get('numero_riferimento'):
+        parts.append("AND NRILDIM.NUMERO_RIFERIMENTO = ?")
+        params.append(filters['numero_riferimento'])
+    if filters.get('date_from'):
+        parts.append("AND NRILDIM.DATA_RILEVAMENTO >= ?")
+        params.append(str(filters['date_from']).replace('-', ''))
+    if filters.get('date_to'):
+        parts.append("AND NRILDIM.DATA_RILEVAMENTO <= ?")
+        params.append(str(filters['date_to']).replace('-', ''))
+    return " ".join(parts), params
+
+
+def build_nrildim_query(filters, limit=None):
     """Build the NRILDIM+NSCHEDIM SELECT and params from a filters dict.
 
-    Mirrors routes.py index()/graph() query construction 1-to-1, including the
-    default ``DATA_RILEVAMENTO LIKE '2025%'`` guard when no filter is supplied.
-    Results are ordered chronologically (required for the chart and for
-    flatten-picks neighbour ordering).
+    Mirrors routes.py index()/graph() query construction. When ``limit`` is set
+    (the Measurements browse path) the query returns at most that many rows,
+    NEWEST first (``TOP n`` + descending order) — a bounded, recent-history view.
+    When ``limit`` is None (the SPC path) results stay in chronological order,
+    which the chart and flatten-picks neighbour logic require; that path is kept
+    safe by the caller's COUNT guard, not by truncation.
     """
-    articolo = filters.get('articolo')
-    numero_riferimento = filters.get('numero_riferimento')
-    date_from = filters.get('date_from')
-    date_to = filters.get('date_to')
+    where, params = _nrildim_where(filters)
+    top = f"TOP {int(limit)} " if limit else ""
+    order = ("ORDER BY NRILDIM.DATA_RILEVAMENTO DESC, NRILDIM.ORA_RILEVAMENTO DESC"
+             if limit else
+             "ORDER BY NRILDIM.DATA_RILEVAMENTO, NRILDIM.ORA_RILEVAMENTO")
+    query = (
+        f"SELECT {top}NRILDIM.*, NSCHEDIM.DESCRIZIONE, NSCHEDIM.VALORE_NOMINALE "
+        "FROM STAAMPDB.NRILDIM NRILDIM "
+        "LEFT JOIN STAAMPDB.NSCHEDIM NSCHEDIM ON NRILDIM.NUMERO_RIFERIMENTO = NSCHEDIM.NUMERO_RIFERIMENTO "
+        f"{where} {order}"
+    )
+    return query, tuple(params)
 
-    parts = [
-        "SELECT NRILDIM.*, NSCHEDIM.DESCRIZIONE, NSCHEDIM.VALORE_NOMINALE ",
-        "FROM STAAMPDB.NRILDIM NRILDIM ",
-        "LEFT JOIN STAAMPDB.NSCHEDIM NSCHEDIM ON NRILDIM.NUMERO_RIFERIMENTO = NSCHEDIM.NUMERO_RIFERIMENTO ",
-        "WHERE 1=1",
-    ]
-    params = []
 
-    if articolo:
-        parts.append("AND NRILDIM.ARTICOLO LIKE ?")
-        params.append(f"{articolo}%")
-    if numero_riferimento:
-        parts.append("AND NRILDIM.NUMERO_RIFERIMENTO = ?")
-        params.append(numero_riferimento)
-    if date_from:
-        parts.append("AND NRILDIM.DATA_RILEVAMENTO >= ?")
-        params.append(str(date_from).replace('-', ''))
-    if date_to:
-        parts.append("AND NRILDIM.DATA_RILEVAMENTO <= ?")
-        params.append(str(date_to).replace('-', ''))
-
-    if not any([articolo, numero_riferimento, date_from, date_to]):
-        parts.append("AND NRILDIM.DATA_RILEVAMENTO LIKE '2025%'")
-
-    parts.append("ORDER BY NRILDIM.DATA_RILEVAMENTO, NRILDIM.ORA_RILEVAMENTO")
-    return " ".join(parts), tuple(params)
+def count_nrildim(filters):
+    """COUNT(*) of NRILDIM rows matching the filter — a cheap pre-flight guard
+    run before an uncapped SPC fetch/commit so we never pull (or write) a set
+    that is too large to tweak safely. No join needed (WHERE is NRILDIM-only)."""
+    where, params = _nrildim_where(filters)
+    query = f"SELECT COUNT(*) AS n FROM STAAMPDB.NRILDIM NRILDIM {where}"
+    df = get_pervasive(query, params=tuple(params))
+    if df is None or df.empty:
+        return 0
+    return int(df.iloc[0]['n'])
 
 
 def format_measurements(df):
@@ -172,16 +197,21 @@ def valid_mis_columns(df):
     return [c for c in MIS_COLS if c in df.columns and df[c].notna().any()]
 
 
-def fetch_measurements(filters, offline_demo=False):
+def fetch_measurements(filters, offline_demo=False, limit=None):
     """Fetch + format the filtered NRILDIM data. Returns a formatted DataFrame.
 
-    When ``offline_demo`` is True the data comes from the fabricated synthetic
-    SQLite (config.OFFLINE_DEMO) instead of the live DB — the live DB is never
-    contacted in that mode, so there is no timeout to wait out.
+    ``limit`` bounds the browse path (newest ``limit`` rows); leave it None for
+    the SPC path, which must see the whole chronological selection (kept safe by
+    a COUNT guard, not truncation). When ``offline_demo`` is True the data comes
+    from the fabricated synthetic SQLite (config.OFFLINE_DEMO) instead of the
+    live DB — the live DB is never contacted in that mode.
     """
     if offline_demo:
-        return format_measurements(_offline_measurements(filters))
-    query, params = build_nrildim_query(filters)
+        df = _offline_measurements(filters)
+        if limit and df is not None and not df.empty:
+            df = df.tail(int(limit)).reset_index(drop=True)  # newest rows
+        return format_measurements(df)
+    query, params = build_nrildim_query(filters, limit=limit)
     logger.info("fetch_measurements query=%s params=%s", query, params)
     df = get_pervasive(query, params=params)
     return format_measurements(df)

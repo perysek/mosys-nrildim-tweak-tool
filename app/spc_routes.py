@@ -44,9 +44,16 @@ def measurements():
     filters = _current_filters()
     demo = _offline_demo()
     error = None
+    truncated = False
+    cap = mosys_data.BROWSE_ROW_CAP
     rows, columns, footer = [], [], spc.footer_stats(None)
     try:
-        df = mosys_data.fetch_measurements(filters, offline_demo=demo)
+        # Pull one more than the cap so we can tell whether the selection was
+        # truncated (and warn), without a second COUNT query on the 4.5M table.
+        df = mosys_data.fetch_measurements(filters, offline_demo=demo, limit=cap + 1)
+        if df is not None and len(df) > cap:
+            truncated = True
+            df = df.head(cap)
         if df is not None and not df.empty:
             valid_mis = mosys_data.valid_mis_columns(df)
             columns = [c for c in mosys_data.DISPLAY_COLUMNS
@@ -67,6 +74,8 @@ def measurements():
         filters=filters,
         spc_query=_filter_querystring(filters),
         offline_demo=demo,
+        truncated=truncated,
+        row_cap=cap,
         error=error,
     )
 
@@ -79,12 +88,25 @@ def spc_tweaks():
     current_series, capability, overall, tol = {}, {}, spc.overall_capability(None, None, None), \
         {'nominal': None, 'usl': None, 'lsl': None}
     try:
-        df = mosys_data.fetch_measurements(filters, offline_demo=demo)
         tol = mosys_data.fetch_tolerance(filters.get('numero_riferimento'), offline_demo=demo)
-        if df is not None and not df.empty:
-            current_series = spc.group_series(df)
-            capability = spc.capability(df, tol['usl'], tol['lsl'])
-            overall = spc.overall_capability(df, tol['usl'], tol['lsl'])
+        # Volume guard: the SPC path is uncapped (preview must equal commit), so
+        # refuse a selection too large to tweak safely BEFORE pulling it. Live
+        # only — the offline sample set is tiny. Same ceiling as the commit path.
+        too_many = None
+        if not demo:
+            n = mosys_data.count_nrildim(filters)
+            if n > mosys_data.SPC_MAX_ROWS:
+                too_many = n
+        if too_many is not None:
+            error = (f"This selection matches {too_many:,} rows — too many to tweak "
+                     f"safely (limit {mosys_data.SPC_MAX_ROWS:,}). Add a dimension "
+                     f"(NUMERO_RIFERIMENTO) and/or a date range to narrow it.")
+        else:
+            df = mosys_data.fetch_measurements(filters, offline_demo=demo)
+            if df is not None and not df.empty:
+                current_series = spc.group_series(df)
+                capability = spc.capability(df, tol['usl'], tol['lsl'])
+                overall = spc.overall_capability(df, tol['usl'], tol['lsl'])
     except Exception as exc:  # noqa: BLE001
         logger.error("spc_tweaks route DB error: %s", exc, exc_info=True)
         error = "Could not load measurement data from the database."
@@ -142,6 +164,14 @@ def spc_tweaks_commit():
     write_enabled = bool(app.config.get('WRITE_ENABLED'))
     demo = _offline_demo()
     try:
+        # Same volume ceiling as the preview path: never recompute a squeeze mean
+        # (and write) over a selection too large to have been previewed safely.
+        if not demo:
+            n = mosys_data.count_nrildim(filters)
+            if n > mosys_data.SPC_MAX_ROWS:
+                return jsonify({'success': False,
+                                'error': f'This selection matches {n:,} rows — too many to '
+                                         f'tweak safely. Narrow the filter and try again.'}), 200
         df = mosys_data.fetch_measurements(filters, offline_demo=demo)
         tol = mosys_data.fetch_tolerance(filters.get('numero_riferimento'), offline_demo=demo)
         # Scope the write to the selected cavity (matches what the user saw on the

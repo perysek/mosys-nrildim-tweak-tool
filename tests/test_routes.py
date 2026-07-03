@@ -20,6 +20,8 @@ from tests import fixtures  # noqa: E402
 
 
 def _fake_get_pervasive(query, params=None):
+    if 'COUNT(*)' in query:                       # count_nrildim volume guard
+        return pd.DataFrame([{'n': len(fixtures.joined_dataframe())}])
     if 'SCHEDIM1' in query:
         return pd.DataFrame([{
             'CODICE_ARTICOLO': 'ART-1', 'RIF_MISURA': fixtures.NUMERO_RIFERIMENTO,
@@ -68,6 +70,31 @@ class RouteTests(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertIn('Could not load measurement data', resp.get_data(as_text=True))
 
+    def test_measurements_truncation_notice(self):
+        # Browse cap: when the selection exceeds the cap, show the loud notice.
+        orig = mosys_data.BROWSE_ROW_CAP
+        mosys_data.BROWSE_ROW_CAP = 1            # fixture has >1 row -> truncated
+        try:
+            resp = self.client.get('/measurements')
+            html = resp.get_data(as_text=True)
+            self.assertIn('most recent rows', html)
+            self.assertIn('more match this filter', html)
+        finally:
+            mosys_data.BROWSE_ROW_CAP = orig
+
+    def test_spc_refuses_oversized_selection(self):
+        # Volume ceiling: an over-large selection is refused (no tweak built),
+        # so the preview can never diverge from what commit would recompute.
+        orig = mosys_data.SPC_MAX_ROWS
+        mosys_data.SPC_MAX_ROWS = 0             # any non-empty selection is "too many"
+        try:
+            resp = self.client.get('/spc-tweaks?numero_riferimento=%d'
+                                   % fixtures.NUMERO_RIFERIMENTO)
+            self.assertEqual(resp.status_code, 200)
+            self.assertIn('too many to tweak safely', resp.get_data(as_text=True))
+        finally:
+            mosys_data.SPC_MAX_ROWS = orig
+
 
 class CommitRouteTests(unittest.TestCase):
     """The commit route's JSON/toast contract (write mechanics are covered by
@@ -103,6 +130,23 @@ class CommitRouteTests(unittest.TestCase):
         data = resp.get_json()
         self.assertTrue(data['success'])
         self.assertEqual(data['message'], 'MOSYS records updated')
+
+    def test_commit_refuses_oversized_selection(self):
+        # The write path is guarded by the SAME ceiling as the preview: never
+        # recompute a squeeze mean (and write) over a set too large to preview.
+        orig = mosys_data.SPC_MAX_ROWS
+        mosys_data.SPC_MAX_ROWS = 0
+        # execute must NOT be reached if the guard fires.
+        spc_routes.execute_nrildim_updates = lambda updates, **kw: (_ for _ in ()).throw(
+            AssertionError("guard should have blocked the write"))
+        try:
+            resp = self.client.post('/spc-tweaks/commit', json={
+                'numero_riferimento': str(fixtures.NUMERO_RIFERIMENTO), 'squeeze': 0.5})
+            data = resp.get_json()
+            self.assertFalse(data['success'])
+            self.assertIn('too many to tweak safely', data['error'])
+        finally:
+            mosys_data.SPC_MAX_ROWS = orig
 
     def test_commit_error_is_non_technical(self):
         from app.functions.mosys import WriteError

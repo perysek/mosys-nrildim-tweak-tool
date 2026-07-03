@@ -3,6 +3,7 @@ import pandas as pd
 import logging
 import os
 import uuid
+import warnings
 import concurrent.futures
 from contextlib import contextmanager
 
@@ -72,7 +73,15 @@ def pervasive_connection(readonly: bool = True):
 def get_pervasive(query: str, params: tuple = None) -> pd.DataFrame:
 	"""Executes a read-only query and returns a cleaned pandas DataFrame."""
 	with pervasive_connection(readonly=True) as conn:
-		df = pd.read_sql(query, conn, params=params)
+		# pandas warns that a raw pyodbc connection isn't a SQLAlchemy connectable.
+		# It works fine here (plain SELECTs) and the DBAPI2 path is stable for our
+		# use, so suppress just that one cosmetic message — nothing else.
+		with warnings.catch_warnings():
+			warnings.filterwarnings(
+				'ignore',
+				message='pandas only supports SQLAlchemy connectable.*',
+				category=UserWarning)
+			df = pd.read_sql(query, conn, params=params)
 	
 	# More efficient whitespace stripping
 	for col in df.select_dtypes(include=['object']).columns:

@@ -50,6 +50,14 @@
     <div class="info-note">No measurement records for the current filters.</div>
     {% else %}
 
+    {% if truncated %}
+    <div class="warn-note" role="status">
+        Showing the {{ '{:,}'.format(row_cap) }} most recent rows — more match this filter.
+        Add a part number and/or a date range to narrow the selection (footer stats below
+        cover the shown rows only).
+    </div>
+    {% endif %}
+
     <div class="table-container">
         <table class="refined-table" id="measTable">
             <thead>
