@@ -1,0 +1,47 @@
+{# Shared card/form styling for the standalone auth pages (login, first-login,
+   forgot/reset password). Included via {% include %} — these pages don't
+   extend base.html, so this can't live in tokens.css's page-scoped classes;
+   it's the auth-page equivalent of base.html's shell chrome. #}
+<style>
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body {
+        font-family: var(--font-body);
+        background: var(--color-surface-warm);
+        color: var(--color-ink);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.875rem;
+        -webkit-font-smoothing: antialiased;
+    }
+    .auth-card {
+        width: 100%;
+        max-width: 22rem;
+        margin: 1rem;
+        background: #fff;
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-sm);
+        padding: 2rem 1.75rem;
+    }
+    .auth-brand { text-align: center; margin-bottom: 1.5rem; }
+    .auth-brand .brand-title { font-size: 1.1rem; font-weight: 600; margin: 0; color: var(--color-ink); }
+    .auth-brand .brand-sub {
+        font-size: 0.65rem; letter-spacing: 0.14em; text-transform: uppercase;
+        color: var(--color-ink-subtle); margin: 0.2rem 0 0;
+    }
+    .auth-title { font-size: 1rem; font-weight: 600; margin: 0 0 1rem; text-align: center; color: var(--color-ink); }
+    .auth-field { margin-bottom: 1rem; }
+    .auth-actions { margin-top: 1.25rem; }
+    .auth-links { margin-top: 1rem; text-align: center; font-size: 0.78rem; }
+    .auth-links a { color: var(--color-ink-muted); text-decoration: none; }
+    .auth-links a:hover { color: var(--color-accent-deep); text-decoration: underline; }
+    .auth-flash {
+        padding: 0.55rem 0.8rem; border-radius: var(--radius-sm); font-size: 0.8125rem;
+        margin-bottom: 1rem; line-height: 1.4;
+    }
+    .auth-flash--error   { background: #fdf3f3; border: 1px solid #f0c8c8; color: var(--color-error); }
+    .auth-flash--success { background: #f0f9f4; border: 1px solid #c8e8d4; color: var(--color-success); }
+    .auth-flash--info    { background: #f2f6fd; border: 1px solid #c5d8f5; color: var(--color-info); }
+    .auth-flash--warning { background: #fdf9ed; border: 1px solid #eddcaa; color: var(--color-warning); }
+</style>

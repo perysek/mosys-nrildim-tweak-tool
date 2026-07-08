@@ -22,11 +22,18 @@ from app.functions import spc  # noqa: E402
 _RUNNER = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'js_parity_runner.js')
 
 # A series with a clean pick (figura '2', idx 2) so both squeeze and flatten fire.
+# Figura '3' is a DISCRIMINATING flatten case: its non-pick mean (10.5),
+# neighbour-average (10.0) and include-picks mean (~10.857) are all DIFFERENT, so
+# parity actually catches JS/Python drift on the flatten target — figura '2' alone
+# cannot (there neighbour-avg == non-pick mean == 10, collapsing the distinction).
 SERIES = {
     '1': {'labels': ['2025-01-01', '2025-01-02', '2025-01-03', '2025-01-04'],
           'values': [10.0, 10.02, 9.98, 10.0]},
     '2': {'labels': ['2025-01-01', '2025-01-02', '2025-01-03', '2025-01-04'],
           'values': [10.0, 10.0, 13.0, 10.0]},
+    '3': {'labels': ['2025-01-01', '2025-01-02', '2025-01-03', '2025-01-04',
+                     '2025-01-05', '2025-01-06', '2025-01-07'],
+          'values': [10.0, 10.0, 13.0, 10.0, 11.0, 11.0, 11.0]},
 }
 NOMINAL = 10.0
 

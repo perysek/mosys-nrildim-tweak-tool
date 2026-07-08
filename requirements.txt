@@ -1,4 +1,6 @@
 flask
+flask-login
+bcrypt
 python-dotenv
 pandas
 pyodbc

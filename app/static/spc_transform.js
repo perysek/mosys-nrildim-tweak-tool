@@ -15,7 +15,6 @@
     'use strict';
 
     var DEFAULT_PICK_THRESHOLD = 0.25;
-    var FLATTEN_NUDGE = 0.10;
     var NB_EPS = 1e-9;
 
     function mean(arr) {
@@ -25,19 +24,37 @@
         return s / arr.length;
     }
 
-    // Per-row flatten delta for one chronologically-ordered value array.
+    // Per-row flatten delta for one chronologically-ordered value array. Interior
+    // picks (>threshold off their neighbour average) are pulled onto the group's
+    // clean baseline = mean of the NON-pick values (mirrors spc.py exactly).
     function flattenDeltas(values, threshold, nominal) {
         var n = values.length;
         var deltas = new Array(n).fill(0.0);
         if (nominal === null || nominal === undefined) return deltas;
+
+        function bad(x) { return x == null || (typeof x === 'number' && isNaN(x)); }
+
+        // 1) Flag interior picks.
+        var isPick = new Array(n).fill(false);
         for (var i = 1; i < n - 1; i++) {
             var v = values[i], left = values[i - 1], right = values[i + 1];
-            if (v == null || left == null || right == null) continue;
+            if (bad(v) || bad(left) || bad(right)) continue;
             var nb = (left + right) / 2.0;
             if (Math.abs(nb) <= NB_EPS) continue;
-            if (Math.abs(v - nb) / Math.abs(nb) <= threshold) continue;
-            var flattened = (v <= nominal) ? nb * (1 - FLATTEN_NUDGE) : nb * (1 + FLATTEN_NUDGE);
-            deltas[i] = flattened - v;
+            if (Math.abs(v - nb) / Math.abs(nb) > threshold) isPick[i] = true;
+        }
+
+        // 2) Baseline = mean of the present NON-pick values (picks excluded).
+        var baseVals = [];
+        for (var k = 0; k < n; k++) {
+            if (!isPick[k] && !bad(values[k])) baseVals.push(values[k]);
+        }
+        if (!baseVals.length) return deltas;
+        var baseline = mean(baseVals);
+
+        // 3) Pull each pick onto the baseline.
+        for (var j = 0; j < n; j++) {
+            if (isPick[j]) deltas[j] = baseline - values[j];
         }
         return deltas;
     }
@@ -69,8 +86,7 @@
     var api = {
         tweakSeries: tweakSeries,
         flattenDeltas: flattenDeltas,
-        DEFAULT_PICK_THRESHOLD: DEFAULT_PICK_THRESHOLD,
-        FLATTEN_NUDGE: FLATTEN_NUDGE
+        DEFAULT_PICK_THRESHOLD: DEFAULT_PICK_THRESHOLD
     };
 
     if (typeof module !== 'undefined' && module.exports) module.exports = api;

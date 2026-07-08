@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}{{ user.full_name }} — Users — MOSYS{% endblock %}
+{% block header_title %}User details{% endblock %}
+
+{% block content %}
+<div class="refined-page">
+    <div class="page-header">
+        <div>
+            <h1 class="page-title">{{ user.full_name }}</h1>
+            <p class="page-subtitle">User account details</p>
+        </div>
+        <div style="display:flex;gap:0.5rem;">
+            <a class="btn-refined btn-refined-secondary btn-press" href="{{ url_for('user_edit', user_id=user.id) }}">Edit</a>
+            <a class="btn-refined btn-refined-secondary btn-press" href="{{ url_for('users_list') }}">Back</a>
+        </div>
+    </div>
+
+    <div class="panel" style="max-width:32rem;">
+        <p class="panel-title">Account</p>
+        <dl style="margin:0;display:grid;grid-template-columns:9rem 1fr;row-gap:0.6rem;font-size:0.8125rem;">
+            <dt style="color:var(--color-ink-subtle);">Full name</dt><dd style="margin:0;">{{ user.full_name }}</dd>
+            <dt style="color:var(--color-ink-subtle);">Role</dt><dd style="margin:0;">{{ user.role|capitalize }}</dd>
+            <dt style="color:var(--color-ink-subtle);">Status</dt><dd style="margin:0;">{{ 'Active' if user.is_active else 'Inactive' }}</dd>
+            <dt style="color:var(--color-ink-subtle);">Employee ID</dt>
+            <dd style="margin:0;">{{ employee['mosys_employee_id'] if employee else '—' }}</dd>
+            <dt style="color:var(--color-ink-subtle);">Last login</dt><dd style="margin:0;">{{ user.last_login or 'Never' }}</dd>
+            <dt style="color:var(--color-ink-subtle);">Created</dt><dd style="margin:0;">{{ user.created_at }}</dd>
+        </dl>
+    </div>
+</div>
+{% endblock %}

@@ -186,4 +186,16 @@
             else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
         }
     });
+
+    // Convenience wrapper for admin table row actions (delete/deactivate/etc.):
+    // reads the target name from data-name (DOM attribute read, not re-parsed as
+    // HTML, so it's safe even when the name contains a quote/apostrophe — unlike
+    // interpolating the name straight into an inline onclick string) and submits
+    // the button's own <form> on confirm.
+    //   <button data-name="ROW_NAME_HERE" onclick="confirmFormAction(this, 'Delete user', 'Delete', 'danger')">
+    function confirmFormAction(btn, title, verb, type) {
+        var form = btn.closest('form');
+        var name = btn.getAttribute('data-name') || 'this record';
+        showConfirmModal(form, title, verb + ' ' + name + '?', title, type || 'danger');
+    }
 </script>

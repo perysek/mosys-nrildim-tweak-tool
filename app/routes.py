@@ -1,4 +1,5 @@
 from flask import render_template, request
+from flask_login import login_required
 from app import app
 from app.functions.mosys import get_pervasive
 import pandas as pd
@@ -30,6 +31,7 @@ COLUMN_LABELS = {
 
 @app.route('/')
 @app.route('/index')
+@login_required
 def index():
     logger.info("=== INDEX ROUTE CALLED ===")
     
@@ -204,6 +206,7 @@ def index():
     return render_template('index.html', title='MOSYS: COLLAUDO-10-2 measurement records', columns=final_columns, data=data, riferimento_options=riferimento_options, column_labels=COLUMN_LABELS)
 
 @app.route('/graph')
+@login_required
 def graph():
     logger.info("=== GRAPH ROUTE CALLED ===")
     

@@ -90,6 +90,29 @@ def get_pervasive(query: str, params: tuple = None) -> pd.DataFrame:
 	return df
 
 
+def fetch_operatori() -> list:
+	"""Production operators for the Employees RBAC sync.
+
+	Only CODICE LIKE '9%' rows are real operators (322 of them, confirmed
+	live). DENOMINAZIONE order is NOT split into first/last: a live probe
+	showed "First Last" here ('9001' -> 'Monika Jarecka'), which is the
+	opposite convention from what other STAAMP sites use — splitting would
+	silently swap names at some sites, so the raw string is kept whole.
+	Returns ``[{'mosys_id': str, 'full_name': str}, ...]``.
+	"""
+	df = get_pervasive(
+		"SELECT CODICE, DENOMINAZIONE FROM STAAMPDB.OPERATORI WHERE CODICE LIKE ?",
+		params=('9%',))
+	result = []
+	for _, row in df.iterrows():
+		mosys_id = str(row['CODICE']).strip()
+		full_name = str(row['DENOMINAZIONE']).strip()
+		if not mosys_id or not full_name:
+			continue
+		result.append({'mosys_id': mosys_id, 'full_name': full_name})
+	return result
+
+
 # ==========================================================================
 #  Safe NRILDIM write path  (IMPLEMENTATION-PLAN.md §3.1 — 8 guarantees)
 #  Ships DRY-RUN BY DEFAULT. Live writes only when dry_run=False is passed

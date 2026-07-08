@@ -15,9 +15,10 @@ import pandas as pd
 
 from app.functions.mosys_data import MIS_COLS, MIS_SCALE, NATURAL_KEY_COLS
 
-# Flatten-picks constants (§3.3.1, user-confirmed D10).
+# Flatten-picks constants (§3.3.1). A pick is DETECTED by neighbour deviation, but
+# is FLATTENED onto the group's clean baseline (mean of the non-pick values) —
+# user directive 2026-07-04, superseding the old neighbour-average +/-10% nudge.
 DEFAULT_PICK_THRESHOLD = 0.25   # a point >25% off its neighbour average is a "pick"
-FLATTEN_NUDGE = 0.10            # +/-10% toward the correct tolerance side
 _NB_EPS = 1e-9                  # guard against neighbour-average ~ 0 (advisor note)
 
 
@@ -122,31 +123,45 @@ def overall_capability(df, usl, lsl):
 def _flatten_delta_for_group(avg_values, threshold, nominal):
     """Per-row flatten delta for one chronologically-ordered group.
 
-    ``avg_values`` is a list of row-averages in chronological order. Returns a
-    list of deltas (same length); interior picks get pulled to their neighbour
-    average nudged +/-10% by tolerance zone, everything else gets 0.0
-    (§3.3.1, D10). No-op when nominal is None.
+    ``avg_values`` is a list of row-averages in chronological order. Interior
+    'picks' — a point more than ``threshold`` off its immediate-neighbour average
+    — are pulled onto the group's CLEAN BASELINE: the mean of the group's NON-pick
+    values (picks excluded so several spikes can't drag the target). Every non-pick
+    row gets 0.0. No-op when nominal is None (flatten stays gated on a resolved
+    tolerance, matching the UI's disabled state — the math itself no longer uses
+    nominal). User directive 2026-07-04 (was: neighbour average +/-10% nudge).
     """
     n = len(avg_values)
     deltas = [0.0] * n
     if nominal is None:
         return deltas
+
+    def _bad(x):
+        return x is None or (isinstance(x, float) and math.isnan(x))
+
+    # 1) Flag interior picks (deviating from their immediate-neighbour average).
+    is_pick = [False] * n
     for i in range(1, n - 1):
-        v = avg_values[i]
-        left = avg_values[i - 1]
-        right = avg_values[i + 1]
-        if v is None or left is None or right is None:
-            continue
-        if any(isinstance(x, float) and math.isnan(x) for x in (v, left, right)):
+        v, left, right = avg_values[i], avg_values[i - 1], avg_values[i + 1]
+        if _bad(v) or _bad(left) or _bad(right):
             continue
         nb = (left + right) / 2.0
         if abs(nb) <= _NB_EPS:               # guard: neighbour avg ~ 0
             continue
-        if abs(v - nb) / abs(nb) <= threshold:
-            continue                          # not a pick
-        # Zone decided by the pick's own value vs nominal.
-        flattened = nb * (1 - FLATTEN_NUDGE) if v <= nominal else nb * (1 + FLATTEN_NUDGE)
-        deltas[i] = flattened - v
+        if abs(v - nb) / abs(nb) > threshold:
+            is_pick[i] = True
+
+    # 2) Baseline = mean of the present NON-pick values (picks excluded).
+    baseline_vals = [avg_values[k] for k in range(n)
+                     if not is_pick[k] and not _bad(avg_values[k])]
+    if not baseline_vals:
+        return deltas                        # no clean baseline (every point a pick)
+    baseline = sum(baseline_vals) / len(baseline_vals)
+
+    # 3) Pull each pick onto the baseline.
+    for i in range(n):
+        if is_pick[i]:
+            deltas[i] = baseline - avg_values[i]
     return deltas
 
 

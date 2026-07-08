@@ -50,6 +50,13 @@
     {% include 'components/confirm_modal.html' %}
     {% include 'components/toasts.html' %}
 
+    {# Bridges Flask's flash() into the existing toast component — this project
+       has no separate flash_messages.html banner, and the categories used
+       throughout (success/error/info) already match showToast()'s types. #}
+    {% for category, message in get_flashed_messages(with_categories=true) %}
+    <script>showToast({{ message|tojson }}, {{ category|tojson }});</script>
+    {% endfor %}
+
     {% block scripts %}{% endblock %}
 </body>
 </html>

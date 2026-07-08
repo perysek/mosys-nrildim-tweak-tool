@@ -67,6 +67,13 @@
     <div class="warn-note" role="alert">{{ error }}</div>
     {% endif %}
 
+    {% if needs_filter %}
+    <div class="info-note" role="status">
+        Enter a <strong>part number</strong> on the Measurements page, then use the <strong>SPC tweaks</strong>
+        button to load a dimension here. This page tweaks one selection at a time — an unfiltered load isn't
+        supported (it would scan the full 4.5&nbsp;million-row table).
+    </div>
+    {% else %}
     <div class="spc-grid">
         <div class="chart-col panel">
             <div class="chart-wrap">
@@ -180,10 +187,12 @@
         </label>
         <button type="button" id="commit-btn" class="btn-refined btn-refined-accent btn-press">Commit</button>
     </div>
+    {% endif %}
 </div>
 {% endblock %}
 
 {% block scripts %}
+{% if not needs_filter %}
 <script src="{{ url_for('static', filename='spc_transform.js') }}"></script>
 <script>
     // ---- Server data ------------------------------------------------------
@@ -536,4 +545,5 @@
     document.getElementById('shift-val').textContent = '0%';
     renderView();   // renders the active cavity with a stable y-range
 </script>
+{% endif %}
 {% endblock %}

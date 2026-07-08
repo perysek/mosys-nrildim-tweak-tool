@@ -3,7 +3,7 @@ import os
 from app import app
 
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', '5001'))
+    port = int(os.environ.get('PORT', '8101'))
     # Debug/reloader is OFF by default. The Werkzeug debugger exposes an
     # interactive console (remote code execution) and the reloader spawns a
     # child that holds the port — neither is acceptable on a server that can

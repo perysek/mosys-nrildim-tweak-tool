@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Users — MOSYS{% endblock %}
+{% block header_title %}Users{% endblock %}
+
+{% block content %}
+<div class="refined-page">
+    <div class="page-header">
+        <div>
+            <h1 class="page-title">Users</h1>
+            <p class="page-subtitle">
+                Accounts originate from <a href="{{ url_for('employees_list') }}">Employees</a> — activate an employee to create one.
+            </p>
+        </div>
+    </div>
+
+    <div class="table-container">
+        <table class="refined-table">
+            <thead>
+                <tr>
+                    <th>Full name</th>
+                    <th>Role</th>
+                    <th>Employee ID</th>
+                    <th>Status</th>
+                    <th>Last login</th>
+                    <th class="no-sort">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for u in users %}
+                <tr>
+                    <td>{{ u['full_name'] }}</td>
+                    <td>{{ u['role']|capitalize }}</td>
+                    <td>{{ u['employee_mosys_id'] or '—' }}</td>
+                    <td>{{ 'Active' if u['is_active'] else 'Inactive' }}</td>
+                    <td>{{ u['last_login'] or 'Never' }}</td>
+                    <td>
+                        <div style="display:flex;gap:0.35rem;">
+                            <a class="btn-refined btn-refined-ghost btn-press"
+                               href="{{ url_for('user_view', user_id=u['id']) }}">View</a>
+                            <a class="btn-refined btn-refined-ghost btn-press"
+                               href="{{ url_for('user_edit', user_id=u['id']) }}">Edit</a>
+                            <form method="POST" action="{{ url_for('user_delete', user_id=u['id']) }}" style="display:inline;">
+                                <button type="button" class="btn-refined btn-refined-ghost btn-press" style="color:var(--color-error);"
+                                        data-name="{{ u['full_name'] }}"
+                                        onclick="confirmFormAction(this, 'Delete user', 'Delete', 'danger')">
+                                    Delete
+                                </button>
+                            </form>
+                        </div>
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="6"><div class="info-note">No users yet.</div></td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

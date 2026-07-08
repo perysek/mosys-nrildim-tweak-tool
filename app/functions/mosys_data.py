@@ -92,14 +92,23 @@ def _nrildim_where(filters):
 
 
 def build_nrildim_query(filters, limit=None):
-    """Build the NRILDIM+NSCHEDIM SELECT and params from a filters dict.
+    """Build the NRILDIM SELECT and params from a filters dict.
 
-    Mirrors routes.py index()/graph() query construction. When ``limit`` is set
-    (the Measurements browse path) the query returns at most that many rows,
-    NEWEST first (``TOP n`` + descending order) — a bounded, recent-history view.
-    When ``limit`` is None (the SPC path) results stay in chronological order,
-    which the chart and flatten-picks neighbour logic require; that path is kept
-    safe by the caller's COUNT guard, not by truncation.
+    NO JOIN. The dimension caption (DESCRIZIONE / VALORE_NOMINALE) is attached
+    afterwards by ``_enrich_dimension_metadata`` — NOT via a SQL join. The old
+    inline ``LEFT JOIN STAAMPDB.NSCHEDIM`` was catastrophic on the live 4.5M-row
+    table: the Pervasive/Actian optimizer ran the join BEFORE the WHERE filter,
+    turning a small filtered read into a full-table join (multi-minute hang /
+    endless spin). Verified empirically 2026-07-04 — every join variant timed out;
+    every no-join variant returned in ~4–5s. (It was also silently WRONG:
+    NSCHEDIM.NUMERO_RIFERIMENTO fans out — ~half the dimensions have >1 row — so
+    the join multiplied every measurement row.)
+
+    When ``limit`` is set (the Measurements browse path) the query returns at most
+    that many rows, NEWEST first (``TOP n`` + descending order). When ``limit`` is
+    None (the SPC path) results stay in chronological order, which the chart and
+    flatten-picks neighbour logic require; that path is kept safe by the caller's
+    COUNT guard, not by truncation.
     """
     where, params = _nrildim_where(filters)
     top = f"TOP {int(limit)} " if limit else ""
@@ -107,12 +116,51 @@ def build_nrildim_query(filters, limit=None):
              if limit else
              "ORDER BY NRILDIM.DATA_RILEVAMENTO, NRILDIM.ORA_RILEVAMENTO")
     query = (
-        f"SELECT {top}NRILDIM.*, NSCHEDIM.DESCRIZIONE, NSCHEDIM.VALORE_NOMINALE "
+        f"SELECT {top}NRILDIM.* "
         "FROM STAAMPDB.NRILDIM NRILDIM "
-        "LEFT JOIN STAAMPDB.NSCHEDIM NSCHEDIM ON NRILDIM.NUMERO_RIFERIMENTO = NSCHEDIM.NUMERO_RIFERIMENTO "
         f"{where} {order}"
     )
     return query, tuple(params)
+
+
+def _dimension_metadata():
+    """The small NSCHEDIM dimension catalogue (~2,587 rows), de-duplicated to one
+    row per NUMERO_RIFERIMENTO and indexed by it. Replaces the old inline NSCHEDIM
+    LEFT JOIN (see build_nrildim_query). Fetched whole (param-less, ~0.4s warm)
+    rather than by an IN-list so the query never scales with the number of
+    dimensions in a result (which could blow a Pervasive parameter limit)."""
+    look = get_pervasive(
+        "SELECT NUMERO_RIFERIMENTO, DESCRIZIONE, VALORE_NOMINALE "
+        "FROM STAAMPDB.NSCHEDIM NSCHEDIM")
+    if look is None or look.empty or 'NUMERO_RIFERIMENTO' not in look.columns:
+        return None
+    look = look.copy()
+    look['NUMERO_RIFERIMENTO'] = look['NUMERO_RIFERIMENTO'].astype(str).str.strip()
+    # keep='first': collapse the fan-out to one caption per dimension. NEVER a
+    # pandas merge / SQL join here — either would re-introduce the row multiplication.
+    return look.drop_duplicates(subset='NUMERO_RIFERIMENTO', keep='first').set_index('NUMERO_RIFERIMENTO')
+
+
+def _enrich_dimension_metadata(df):
+    """Attach DESCRIZIONE + VALORE_NOMINALE to a raw NRILDIM frame by mapping the
+    de-duplicated NSCHEDIM catalogue onto NUMERO_RIFERIMENTO (1-to-1, never a
+    join). Missing dimensions map to None — the callers are None-safe."""
+    if df is None or df.empty:
+        return df
+    df = df.copy()
+    if 'NUMERO_RIFERIMENTO' not in df.columns:
+        df['DESCRIZIONE'] = None
+        df['VALORE_NOMINALE'] = None
+        return df
+    meta = _dimension_metadata()
+    key = df['NUMERO_RIFERIMENTO'].astype(str).str.strip()
+    if meta is None:
+        df['DESCRIZIONE'] = None
+        df['VALORE_NOMINALE'] = None
+    else:
+        df['DESCRIZIONE'] = key.map(meta['DESCRIZIONE'])
+        df['VALORE_NOMINALE'] = key.map(meta['VALORE_NOMINALE'])
+    return df
 
 
 def count_nrildim(filters):
@@ -125,6 +173,65 @@ def count_nrildim(filters):
     if df is None or df.empty:
         return 0
     return int(df.iloc[0]['n'])
+
+
+def fetch_part_numbers(offline_demo=False):
+    """Distinct part numbers for the Measurements part-number dropdown.
+
+    Sourced from the small SCHEDIM1 spec table (CODICE_ARTICOLO) so the initial
+    page load is instant — NRILDIM's 4.5M rows are never scanned here. Returns a
+    sorted list of strings. NB: this is the spec master, so some parts may have no
+    measurements yet — the dependent dimension dropdown (measured-only) surfaces
+    that by coming back empty."""
+    if offline_demo:
+        return _offline_part_numbers()
+    df = get_pervasive("SELECT DISTINCT CODICE_ARTICOLO AS a FROM STAAMPDB.SCHEDIM1 SCHEDIM1")
+    if df is None or df.empty or 'a' not in df.columns:
+        return []
+    return sorted({str(a).strip() for a in df['a'].dropna() if str(a).strip()})
+
+
+def fetch_measured_dimensions(articolo, offline_demo=False):
+    """Dimensions that ACTUALLY have measurements for a part number.
+
+    Distinct NRILDIM.NUMERO_RIFERIMENTO for the article (an article-scoped scan,
+    ~3-6s on the live 4.5M-row table — hence served by an on-demand AJAX endpoint,
+    not the initial page load), captioned via the small NSCHEDIM catalogue. Only
+    listing measured dimensions guarantees the subsequent 'Get data' fetch returns
+    rows. Returns a list of ``{'numero_riferimento', 'descrizione'}`` sorted by
+    caption."""
+    if not articolo:
+        return []
+    if offline_demo:
+        return _offline_measured_dimensions(articolo)
+    df = get_pervasive(
+        "SELECT DISTINCT NUMERO_RIFERIMENTO AS r FROM STAAMPDB.NRILDIM NRILDIM "
+        "WHERE NRILDIM.ARTICOLO LIKE ?", params=(f"{articolo}%",))
+    if df is None or df.empty or 'r' not in df.columns:
+        return []
+    meta = _dimension_metadata()
+    return _caption_dimensions(df['r'], meta)
+
+
+def _caption_dimensions(rif_series, meta):
+    """Build sorted [{'numero_riferimento','descrizione'}] from a series of raw
+    NUMERO_RIFERIMENTO values, captioning via the de-duplicated NSCHEDIM catalogue
+    (falls back to the raw id when a dimension has no caption)."""
+    out = []
+    seen = set()
+    for r in rif_series.dropna():
+        rif = str(r).strip()
+        if not rif or rif in seen:
+            continue
+        seen.add(rif)
+        caption = rif
+        if meta is not None and rif in meta.index:
+            v = meta.loc[rif, 'DESCRIZIONE']
+            if pd.notna(v) and str(v).strip():
+                caption = str(v).strip()
+        out.append({'numero_riferimento': rif, 'descrizione': caption})
+    out.sort(key=lambda d: (str(d['descrizione']).lower(), d['numero_riferimento']))
+    return out
 
 
 def format_measurements(df):
@@ -214,16 +321,41 @@ def fetch_measurements(filters, offline_demo=False, limit=None):
     query, params = build_nrildim_query(filters, limit=limit)
     logger.info("fetch_measurements query=%s params=%s", query, params)
     df = get_pervasive(query, params=params)
+    df = _enrich_dimension_metadata(df)   # replaces the removed NSCHEDIM join
     return format_measurements(df)
 
 
+def _select_tolerance_row(tol):
+    """Pick the LIVE SCHEDIM1 spec row for a dimension.
+
+    SCHEDIM1 is versioned: it keeps superseded revisions (``FLAG_RIMOSSO`` truthy)
+    alongside the one active row (``FLAG_RIMOSSO`` = '0'). The stale rows routinely
+    carry a placeholder ``VALORE_NOMINALE`` of 0, so a blind ``iloc[0]`` returned a
+    nominal of 0 for real dimensions (e.g. SB4600555200C 'DIAM 8,1' → 0 instead of
+    8.1). Prefer the active row. NB: use a FIXED convention ('0'/blank = active),
+    NOT mosys._resolve_removed_flag_value — that computes 'removed = least-occurring'
+    which INVERTS on a per-RIF filtered set (2 removed + 1 active → active looks
+    rarest). '0' can be a legitimate active nominal (defect-count dims), so this
+    only drops removed rows; it never prefers non-zero over a genuine active zero."""
+    if tol is None or tol.empty:
+        return None
+    if 'FLAG_RIMOSSO' in tol.columns:
+        flag = tol['FLAG_RIMOSSO'].astype(str).str.strip().str.lower()
+        active = tol[flag.isin(('0', '', 'nan', 'none'))]
+        if not active.empty:
+            return active.iloc[0]
+    return tol.iloc[0]
+
+
 def _tolerance_from_frame(tol):
-    """Shared tolerance-operator math (routes.py L288-336) over a 1-row frame."""
+    """Shared tolerance-operator math (routes.py L288-336) over the LIVE spec row."""
     result = {'nominal': None, 'usl': None, 'lsl': None}
     if tol is None or tol.empty:
         return result
 
-    row = tol.iloc[0]
+    row = _select_tolerance_row(tol)
+    if row is None:
+        return result
     nominal = float(row['VALORE_NOMINALE']) if pd.notna(row['VALORE_NOMINALE']) else None
     if nominal is None:
         return result
@@ -256,7 +388,7 @@ def fetch_tolerance(numero_riferimento, offline_demo=False):
 
     query = (
         "SELECT CODICE_ARTICOLO, RIF_MISURA, UN_MIS, VALORE_NOMINALE, "
-        "SEGNO_TOLL_INF, TOLL_INF, SEGNO_TOLL_SUP, TOLL_SUP "
+        "SEGNO_TOLL_INF, TOLL_INF, SEGNO_TOLL_SUP, TOLL_SUP, FLAG_RIMOSSO "
         "FROM STAAMPDB.SCHEDIM1 SCHEDIM1 WHERE SCHEDIM1.RIF_MISURA = ?"
     )
     tol = get_pervasive(query, params=(numero_riferimento,))
@@ -296,6 +428,36 @@ def _offline_measurements(filters):
     if date_to:
         df = df[df['DATA_RILEVAMENTO'].astype(str) <= str(date_to).replace('-', '')]
     return df.reset_index(drop=True)
+
+
+def _offline_part_numbers():
+    """Distinct part numbers from the synthetic NRILDIM (data-driven, like live)."""
+    if not os.path.exists(_OFFLINE_DB):
+        return []
+    with sqlite3.connect(_OFFLINE_DB) as conn:
+        df = pd.read_sql("SELECT DISTINCT ARTICOLO AS a FROM NRILDIM", conn)
+    if df is None or df.empty:
+        return []
+    return sorted({str(a).strip() for a in df['a'].dropna() if str(a).strip()})
+
+
+def _offline_measured_dimensions(articolo):
+    """Measured dimensions for a part number from the synthetic NRILDIM + NSCHEDIM."""
+    if not os.path.exists(_OFFLINE_DB):
+        return []
+    with sqlite3.connect(_OFFLINE_DB) as conn:
+        nr = pd.read_sql(
+            "SELECT DISTINCT NUMERO_RIFERIMENTO AS r FROM NRILDIM WHERE ARTICOLO LIKE ?",
+            conn, params=(f"{articolo}%",))
+        nsched = pd.read_sql("SELECT NUMERO_RIFERIMENTO, DESCRIZIONE FROM NSCHEDIM", conn)
+    if nr is None or nr.empty:
+        return []
+    meta = None
+    if nsched is not None and not nsched.empty:
+        nsched = nsched.copy()
+        nsched['NUMERO_RIFERIMENTO'] = nsched['NUMERO_RIFERIMENTO'].astype(str).str.strip()
+        meta = nsched.drop_duplicates('NUMERO_RIFERIMENTO').set_index('NUMERO_RIFERIMENTO')
+    return _caption_dimensions(nr['r'], meta)
 
 
 def _offline_tolerance(numero_riferimento):

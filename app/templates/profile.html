@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Profile — MOSYS{% endblock %}
+{% block header_title %}Profile{% endblock %}
+
+{% block content %}
+<div class="refined-page">
+    <div class="page-header">
+        <div>
+            <h1 class="page-title">Profile</h1>
+            <p class="page-subtitle">Your account details and password</p>
+        </div>
+    </div>
+
+    <div class="panel" style="max-width:28rem;margin-bottom:1rem;">
+        <p class="panel-title">Account</p>
+        <p style="margin:0 0 0.4rem;"><strong>{{ current_user.full_name }}</strong></p>
+        <p style="margin:0 0 0.4rem;color:var(--color-ink-muted);font-size:0.8125rem;">{{ role_caption }}</p>
+        {% if employee and employee['mosys_employee_id'] %}
+        <p style="margin:0;color:var(--color-ink-subtle);font-size:0.8125rem;">
+            Employee ID: {{ employee['mosys_employee_id'] }}
+        </p>
+        {% endif %}
+    </div>
+
+    <div class="panel" style="max-width:28rem;">
+        <p class="panel-title">Change password</p>
+        <form method="POST">
+            <div style="margin-bottom:0.75rem;">
+                <label class="field-label" for="old_password">Current password</label>
+                <input type="password" id="old_password" name="old_password" class="refined-input" required>
+            </div>
+            <div style="margin-bottom:0.75rem;">
+                <label class="field-label" for="new_password">New password</label>
+                <input type="password" id="new_password" name="new_password" class="refined-input" minlength="8" required>
+            </div>
+            <div style="margin-bottom:1rem;">
+                <label class="field-label" for="confirm_password">Confirm new password</label>
+                <input type="password" id="confirm_password" name="confirm_password" class="refined-input" minlength="8" required>
+            </div>
+            <button type="submit" class="btn-refined btn-refined-primary btn-press">Change password</button>
+        </form>
+    </div>
+</div>
+{% endblock %}

@@ -65,8 +65,10 @@ def _create_schema(conn):
         "MIS01 INTEGER, MIS02 INTEGER, MIS03 INTEGER)"
     )
     conn.execute("CREATE TABLE NSCHEDIM (NUMERO_RIFERIMENTO TEXT, FLAG_RIMOSSO INTEGER, DESCRIZIONE TEXT)")
+    # SCHEDIM1 is versioned: FLAG_RIMOSSO='0' = live spec, non-'0' = superseded.
     conn.execute("CREATE TABLE SCHEDIM1 (RIF_MISURA TEXT, VALORE_NOMINALE REAL, "
-                 "SEGNO_TOLL_INF TEXT, TOLL_INF REAL, SEGNO_TOLL_SUP TEXT, TOLL_SUP REAL)")
+                 "SEGNO_TOLL_INF TEXT, TOLL_INF REAL, SEGNO_TOLL_SUP TEXT, TOLL_SUP REAL, "
+                 "FLAG_RIMOSSO TEXT)")
 
 
 def populate(conn, *, removed_ref=None):
@@ -90,8 +92,15 @@ def populate(conn, *, removed_ref=None):
     if removed_ref is not None:
         conn.execute("UPDATE NSCHEDIM SET FLAG_RIMOSSO = 1 WHERE NUMERO_RIFERIMENTO = ?", (str(removed_ref),))
 
-    conn.execute("INSERT INTO SCHEDIM1 VALUES (?,?,?,?,?,?)",
-                 (str(NUMERO_RIFERIMENTO), NOMINAL, '-', 0.5, '+', 0.5))
+    # Two superseded rows (FLAG_RIMOSSO='1') carrying a stale placeholder nominal
+    # of 0, plus the LIVE row (FLAG_RIMOSSO='0') with the real nominal — mirrors
+    # production SCHEDIM1 and exercises _select_tolerance_row (must pick the live row).
+    conn.execute("INSERT INTO SCHEDIM1 VALUES (?,?,?,?,?,?,?)",
+                 (str(NUMERO_RIFERIMENTO), 0.0, '-', 0.5, '+', 0.5, '1'))
+    conn.execute("INSERT INTO SCHEDIM1 VALUES (?,?,?,?,?,?,?)",
+                 (str(NUMERO_RIFERIMENTO), 0.0, '-', 0.5, '+', 0.5, '1'))
+    conn.execute("INSERT INTO SCHEDIM1 VALUES (?,?,?,?,?,?,?)",
+                 (str(NUMERO_RIFERIMENTO), NOMINAL, '-', 0.5, '+', 0.5, '0'))
     conn.commit()
 
 
