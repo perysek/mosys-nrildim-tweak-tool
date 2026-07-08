@@ -95,46 +95,6 @@ class RouteTests(unittest.TestCase):
         auth_db.get_connection = self._orig_get_connection
         shutil.rmtree(self._tmpdir, ignore_errors=True)
 
-    def test_measurements_renders(self):
-        # A table renders only when BOTH dropdowns are chosen (part + dimension).
-        resp = self.client.get('/measurements?articolo=ART-1&numero_riferimento=%d'
-                               % fixtures.NUMERO_RIFERIMENTO)
-        self.assertEqual(resp.status_code, 200)
-        html = resp.get_data(as_text=True)
-        self.assertIn('Measurements', html)
-        self.assertIn('id="measTable"', html)
-        self.assertIn('Total rows', html)
-        self.assertIn('SPC tweaks', html)          # cross-link button
-        self.assertIn('Measurement 1', html)       # column label
-
-    def test_measurements_shows_dropdowns(self):
-        # Initial load (no selection): the two comboboxes + Get data, no table.
-        resp = self.client.get('/measurements')
-        self.assertEqual(resp.status_code, 200)
-        html = resp.get_data(as_text=True)
-        self.assertIn('id="part-input"', html)      # part-number combobox
-        self.assertIn('id="dim-input"', html)       # dimension combobox
-        self.assertIn('id="get-data-btn"', html)    # Get data button
-        self.assertIn('"ART-1"', html)              # embedded part number
-        self.assertNotIn('id="measTable"', html)    # no table until a selection
-        self.assertIn('Select a', html)             # prompt
-
-    def test_measured_dimensions_endpoint(self):
-        # AJAX endpoint powering dropdown #2: measured dims for a part number.
-        resp = self.client.get('/measurements/dimensions?articolo=ART-1')
-        self.assertEqual(resp.status_code, 200)
-        data = resp.get_json()
-        self.assertIn('dimensions', data)
-        self.assertEqual(len(data['dimensions']), 1)
-        self.assertEqual(data['dimensions'][0]['numero_riferimento'],
-                         str(fixtures.NUMERO_RIFERIMENTO))
-        self.assertEqual(data['dimensions'][0]['descrizione'], 'Test dimension')
-
-    def test_measured_dimensions_endpoint_requires_articolo(self):
-        resp = self.client.get('/measurements/dimensions')
-        self.assertEqual(resp.status_code, 200)
-        self.assertEqual(resp.get_json()['dimensions'], [])
-
     def test_spc_tweaks_renders(self):
         resp = self.client.get('/spc-tweaks?articolo=ART-1&numero_riferimento=%d'
                                % fixtures.NUMERO_RIFERIMENTO)
@@ -146,23 +106,39 @@ class RouteTests(unittest.TestCase):
         self.assertIn('Preview', html)
         self.assertIn('spc_transform.js', html)
         self.assertIn('Production writes are disabled', html)  # WRITE_ENABLED off
+        self.assertIn('id="part-input"', html)      # part-number combobox
+        self.assertIn('id="dim-input"', html)       # dimension combobox
+        self.assertIn('id="get-data-btn"', html)    # Load button
+        self.assertIn('"ART-1"', html)               # embedded selection
+        self.assertIn('Test dimension', html)         # preselected dimension caption
 
-    def test_measurements_partial_selection_shows_no_table(self):
-        # A part number alone (no dimension) is NOT enough to fetch — no table,
-        # no whole-table query. Guards the "both dropdowns required" contract.
-        called = {'main': False}
-        real = _fake_get_pervasive
-
-        def spy(query, params=None):
-            if 'NRILDIM.*' in query:
-                called['main'] = True
-            return real(query, params)
-        mosys_data.get_pervasive = spy
-        resp = self.client.get('/measurements?articolo=ART-1')
+    def test_spc_tweaks_shows_dropdowns_before_any_selection(self):
+        # Initial load (no selection): the two comboboxes + Load, no chart.
+        resp = self.client.get('/spc-tweaks')
         self.assertEqual(resp.status_code, 200)
         html = resp.get_data(as_text=True)
-        self.assertNotIn('id="measTable"', html)
-        self.assertFalse(called['main'])            # no measurement fetch
+        self.assertIn('id="part-input"', html)      # part-number combobox
+        self.assertIn('id="dim-input"', html)       # dimension combobox
+        self.assertIn('id="get-data-btn"', html)    # Load button
+        self.assertIn('"ART-1"', html)              # embedded part number
+        self.assertNotIn('id="spcChart"', html)     # chart skipped until a selection
+        self.assertIn('Select a', html)             # prompt
+
+    def test_spc_tweaks_dimensions_endpoint(self):
+        # AJAX endpoint powering the dimension dropdown: measured dims for a part number.
+        resp = self.client.get('/spc-tweaks/dimensions?articolo=ART-1')
+        self.assertEqual(resp.status_code, 200)
+        data = resp.get_json()
+        self.assertIn('dimensions', data)
+        self.assertEqual(len(data['dimensions']), 1)
+        self.assertEqual(data['dimensions'][0]['numero_riferimento'],
+                         str(fixtures.NUMERO_RIFERIMENTO))
+        self.assertEqual(data['dimensions'][0]['descrizione'], 'Test dimension')
+
+    def test_spc_tweaks_dimensions_endpoint_requires_articolo(self):
+        resp = self.client.get('/spc-tweaks/dimensions')
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.get_json()['dimensions'], [])
 
     def test_spc_requires_part_number(self):
         # The SPC route fires COUNT(*) before its guard — on an unfiltered live
@@ -176,27 +152,14 @@ class RouteTests(unittest.TestCase):
         self.assertIn('part number', html)
         self.assertNotIn('id="spcChart"', html)    # chart + scripts skipped
 
-    def test_measurements_db_error_is_graceful(self):
+    def test_spc_tweaks_db_error_is_graceful(self):
         def boom(query, params=None):
             raise RuntimeError("DB down")
         mosys_data.get_pervasive = boom
-        resp = self.client.get('/measurements?articolo=ART-1&numero_riferimento=%d'
+        resp = self.client.get('/spc-tweaks?articolo=ART-1&numero_riferimento=%d'
                                % fixtures.NUMERO_RIFERIMENTO)
         self.assertEqual(resp.status_code, 200)
         self.assertIn('Could not load measurement data', resp.get_data(as_text=True))
-
-    def test_measurements_truncation_notice(self):
-        # Row cap: when the dimension has more than the cap, show the loud notice.
-        orig = mosys_data.BROWSE_ROW_CAP
-        mosys_data.BROWSE_ROW_CAP = 1            # fixture has >1 row -> truncated
-        try:
-            resp = self.client.get('/measurements?articolo=ART-1&numero_riferimento=%d'
-                                   % fixtures.NUMERO_RIFERIMENTO)
-            html = resp.get_data(as_text=True)
-            self.assertIn('most recent rows', html)
-            self.assertIn('this dimension has more', html)
-        finally:
-            mosys_data.BROWSE_ROW_CAP = orig
 
     def test_enrichment_maps_metadata_without_row_fanout(self):
         # The old NSCHEDIM LEFT JOIN multiplied every measurement row by the
@@ -329,11 +292,11 @@ class OfflineDemoTests(unittest.TestCase):
         app.config['OFFLINE_DEMO'] = True
         app.config['WRITE_ENABLED'] = False
         mosys_data.get_pervasive = self._forbidden  # would raise if the DB were hit
-        resp = self.client.get('/measurements?articolo=ART-1&numero_riferimento=5001')
+        resp = self.client.get('/spc-tweaks?articolo=ART-1&numero_riferimento=5001')
         self.assertEqual(resp.status_code, 200)
         html = resp.get_data(as_text=True)
         self.assertIn('OFFLINE SAMPLE DATA', html)   # loud banner
-        self.assertIn('10.000', html)                # fabricated MIS value rendered
+        self.assertIn('10.000', html)                # fabricated nominal value rendered
 
     def test_write_enabled_forces_demo_off(self):
         # Safety interlock: never serve mock on a write-capable page.
@@ -343,7 +306,7 @@ class OfflineDemoTests(unittest.TestCase):
         def boom(query, params=None):
             raise RuntimeError("DB down")
         mosys_data.get_pervasive = boom
-        resp = self.client.get('/measurements?articolo=ART-1&numero_riferimento=5001')
+        resp = self.client.get('/spc-tweaks?articolo=ART-1&numero_riferimento=5001')
         self.assertEqual(resp.status_code, 200)
         html = resp.get_data(as_text=True)
         self.assertNotIn('OFFLINE SAMPLE DATA', html)      # demo suppressed

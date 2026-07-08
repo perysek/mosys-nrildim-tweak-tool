@@ -226,7 +226,7 @@ class RouteGatingTests(AuthTestBase):
             sess['_fresh'] = True
 
     def test_unauthenticated_redirects_to_login(self):
-        for path in ('/', '/graph', '/measurements', '/system/users'):
+        for path in ('/spc-tweaks', '/system/users'):
             resp = self.client.get(path)
             self.assertEqual(resp.status_code, 302, path)
             self.assertIn('/login', resp.headers['Location'])
@@ -236,7 +236,7 @@ class RouteGatingTests(AuthTestBase):
         self._login_as(user_id)
         resp = self.client.get('/system/users')
         self.assertEqual(resp.status_code, 302)
-        self.assertNotIn('/login', resp.headers['Location'])  # redirected to index, not login
+        self.assertNotIn('/login', resp.headers['Location'])  # redirected to spc-tweaks, not login
 
     def test_superuser_can_reach_admin_pages(self):
         _, user_id = self._make_employee_and_user(mosys_id='9031', role='superuser')

@@ -1,9 +1,7 @@
-"""Routes for the new Measurements and SPC-Tweaks pages.
+"""Routes for the SPC-Tweaks page — the app's only data-browsing view.
 
-Kept in a separate module (imported by app/__init__.py) so the master-reference
-app/routes.py stays untouched — blast-radius limit per IMPLEMENTATION-PLAN.md
-§3.2. All data reads go through the shared app.functions.mosys_data pipeline so
-the table and the chart provably read identical data; all SPC math is in
+All data reads go through the shared app.functions.mosys_data pipeline so the
+chart and any future consumer provably read identical data; all SPC math is in
 app.functions.spc; all production writes go through the dry-run-gated
 mosys.execute_nrildim_updates.
 """
@@ -44,72 +42,9 @@ def _offline_demo():
     return bool(app.config.get('OFFLINE_DEMO')) and not bool(app.config.get('WRITE_ENABLED'))
 
 
-@app.route('/measurements')
+@app.route('/spc-tweaks/dimensions')
 @login_required
-def measurements():
-    filters = _current_filters()
-    demo = _offline_demo()
-    error = None
-    truncated = False
-    cap = mosys_data.BROWSE_ROW_CAP
-    rows, columns, footer = [], [], spc.footer_stats(None)
-
-    # Part-number dropdown source (small spec table — instant). Always available so
-    # the two-dropdown filter renders even before anything is selected.
-    part_numbers = []
-    try:
-        part_numbers = mosys_data.fetch_part_numbers(offline_demo=demo)
-    except Exception as exc:  # noqa: BLE001
-        logger.error("measurements part-number list failed: %s", exc, exc_info=True)
-
-    # A table is fetched ONLY once BOTH dropdowns are chosen (part number AND
-    # dimension). That guarantees a fast, bounded article+dimension read and makes
-    # an unfiltered whole-table scan impossible (the old endless-spin cause).
-    has_selection = bool(filters.get('articolo')) and bool(filters.get('numero_riferimento'))
-    selected_descrizione = ''
-    if has_selection:
-        try:
-            # No TOP: article+dimension is bounded and fast (~5s); the reverse-scan
-            # pathology of TOP+DESC is avoided. Newest-first + cap applied in-frame.
-            df = mosys_data.fetch_measurements(filters, offline_demo=demo)
-            if df is not None and not df.empty:
-                df = df.sort_values(['DATA_RILEVAMENTO', 'ORA_RILEVAMENTO'], ascending=False)
-                if len(df) > cap:
-                    truncated = True
-                    df = df.head(cap)
-                if 'DESCRIZIONE' in df.columns and df['DESCRIZIONE'].notna().any():
-                    selected_descrizione = str(df['DESCRIZIONE'].dropna().iloc[0])
-                valid_mis = mosys_data.valid_mis_columns(df)
-                columns = [c for c in mosys_data.DISPLAY_COLUMNS
-                           if c in df.columns and (not c.startswith('MIS') or c in valid_mis)]
-                rows = df[columns].to_dict(orient='records')
-                footer = spc.footer_stats(df)
-        except Exception as exc:  # noqa: BLE001
-            logger.error("measurements route DB error: %s", exc, exc_info=True)
-            error = "Could not load measurement data from the database."
-
-    return render_template(
-        'measurements.html',
-        title='Measurements',
-        columns=columns,
-        column_labels=mosys_data.COLUMN_LABELS,
-        rows=rows,
-        footer=footer,
-        filters=filters,
-        spc_query=_filter_querystring(filters),
-        offline_demo=demo,
-        truncated=truncated,
-        row_cap=cap,
-        part_numbers=part_numbers,
-        has_selection=has_selection,
-        selected_descrizione=selected_descrizione,
-        error=error,
-    )
-
-
-@app.route('/measurements/dimensions')
-@login_required
-def measurements_dimensions():
+def spc_tweaks_dimensions():
     """JSON endpoint powering the dependent dimension dropdown: the dimensions
     that ACTUALLY have measurements for a part number. Article-scoped NRILDIM scan
     (~3-6s) — deliberately on-demand so the initial page load stays instant."""
@@ -126,17 +61,27 @@ def measurements_dimensions():
 
 
 @app.route('/spc-tweaks')
+@app.route('/')
 @login_required
 def spc_tweaks():
     filters = _current_filters()
     demo = _offline_demo()
     error = None
-    # Same gate as /measurements: a part number is required before any DB read.
-    # count_nrildim on an unfiltered selection scans the whole 4.5M-row table
-    # (~4 min) — never run it on an empty filter.
+
+    # Part-number dropdown source (small spec table — instant). Always available so
+    # the filter bar renders even before anything is selected.
+    part_numbers = []
+    try:
+        part_numbers = mosys_data.fetch_part_numbers(offline_demo=demo)
+    except Exception as exc:  # noqa: BLE001
+        logger.error("spc-tweaks part-number list failed: %s", exc, exc_info=True)
+
+    # A part number is required before any DB read — count_nrildim on an
+    # unfiltered selection scans the whole 4.5M-row table (~4 min).
     needs_filter = not filters.get('articolo')
     current_series, capability, overall, tol = {}, {}, spc.overall_capability(None, None, None), \
         {'nominal': None, 'usl': None, 'lsl': None}
+    selected_descrizione = ''
     if not needs_filter:
         try:
             tol = mosys_data.fetch_tolerance(filters.get('numero_riferimento'), offline_demo=demo)
@@ -155,6 +100,8 @@ def spc_tweaks():
             else:
                 df = mosys_data.fetch_measurements(filters, offline_demo=demo)
                 if df is not None and not df.empty:
+                    if 'DESCRIZIONE' in df.columns and df['DESCRIZIONE'].notna().any():
+                        selected_descrizione = str(df['DESCRIZIONE'].dropna().iloc[0])
                     current_series = spc.group_series(df)
                     capability = spc.capability(df, tol['usl'], tol['lsl'])
                     overall = spc.overall_capability(df, tol['usl'], tol['lsl'])
@@ -173,7 +120,8 @@ def spc_tweaks():
         'spc_tweaks.html',
         title='SPC Tweaks',
         filters=filters,
-        measurements_query=_filter_querystring(filters),
+        part_numbers=part_numbers,
+        selected_descrizione=selected_descrizione,
         current_series=json.dumps(current_series),
         capability=json.dumps(capability),
         overall=overall,

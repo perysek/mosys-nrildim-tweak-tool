@@ -31,6 +31,12 @@ def employees_list():
     return render_template('admin/employees_list.html', employees=employees)
 
 
+# MOSYS sync only onboards this ID range — STAAMPDB.OPERATORI carries some
+# non-employee placeholder codes above 9500 (e.g. "!!! RETTIFICA" at 9999)
+# that shouldn't show up as activatable people.
+_SYNC_ID_MIN, _SYNC_ID_MAX = 9001, 9500
+
+
 @app.route('/system/employees/sync-mosys', methods=['POST'])
 @login_required
 @role_required('superuser')
@@ -41,13 +47,23 @@ def employees_sync_mosys():
         flash(f'Could not connect to MOSYS: {e}', 'error')
         return redirect(url_for('employees_list'))
 
-    result = _employee_repo.sync_from_mosys(mosys_employees)
+    in_range = []
+    for e in mosys_employees:
+        try:
+            if _SYNC_ID_MIN <= int(e['mosys_id']) <= _SYNC_ID_MAX:
+                in_range.append(e)
+        except (TypeError, ValueError):
+            continue
+
+    result = _employee_repo.sync_from_mosys(in_range)
     auth_db.log_event('employee_sync_mosys', user_id=current_user.id, user_email=current_user.email,
                        user_name=current_user.full_name,
-                       detail=f"added={result['added']}, updated={result['updated']}, total={len(mosys_employees)}",
+                       detail=f"added={result['added']}, updated={result['updated']}, "
+                              f"in_range={len(in_range)}, fetched={len(mosys_employees)}",
                        ip_address=request.remote_addr)
     flash(f"MOSYS sync complete — {result['added']} added, {result['updated']} updated "
-          f"({len(mosys_employees)} total operators).", 'success')
+          f"({len(in_range)} operators in range {_SYNC_ID_MIN}–{_SYNC_ID_MAX}, "
+          f"{len(mosys_employees)} fetched total).", 'success')
     return redirect(url_for('employees_list'))
 
 

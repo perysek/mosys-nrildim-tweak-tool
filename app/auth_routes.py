@@ -23,7 +23,7 @@ _auth_service = AuthService(_user_repo)
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if current_user.is_authenticated:
-        return redirect(url_for('index'))
+        return redirect(url_for('spc_tweaks'))
 
     employee_id = ''
     if request.method == 'POST':
@@ -39,7 +39,7 @@ def login():
             if user.must_change_password:
                 return redirect(url_for('set_first_password'))
             next_page = request.args.get('next')
-            return redirect(next_page or url_for('index'))
+            return redirect(next_page or url_for('spc_tweaks'))
 
         auth_db.log_event('login_failed', detail=f'employee_id={employee_id}: {error}',
                            ip_address=request.remote_addr)
@@ -86,7 +86,7 @@ def first_login():
     auth_db.log_event('password_set_first', user_id=user.id, user_email=user.email,
                        user_name=user.full_name, ip_address=request.remote_addr)
     flash('Password set. Welcome!', 'success')
-    return redirect(url_for('index'))
+    return redirect(url_for('spc_tweaks'))
 
 
 @app.route('/auth/set-first-password', methods=['GET', 'POST'])
@@ -95,7 +95,7 @@ def set_first_password():
     """Same flow as first_login, but for a user already in session whose
     must_change_password flag is still set (rare — belt and suspenders)."""
     if not current_user.must_change_password:
-        return redirect(url_for('index'))
+        return redirect(url_for('spc_tweaks'))
 
     if request.method == 'POST':
         new_pw = request.form.get('new_password', '')
@@ -111,7 +111,7 @@ def set_first_password():
                                user_email=current_user.email, user_name=current_user.full_name,
                                ip_address=request.remote_addr)
             flash('Password set. Welcome!', 'success')
-            return redirect(url_for('index'))
+            return redirect(url_for('spc_tweaks'))
 
     return render_template('auth/set_first_password.html')
 

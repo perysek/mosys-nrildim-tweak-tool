@@ -14,12 +14,26 @@
     </div>
 
     <div class="table-container">
-        <table class="refined-table">
+        <table class="refined-table table-align-middle" id="rolesTable">
             <thead>
                 <tr>
-                    <th>Role</th>
-                    <th>Users</th>
-                    <th>Access level</th>
+                    <th data-sort-col="0">
+                        <span class="th-header">
+                            <span>Role</span>
+                            <button type="button" class="sort-btn" aria-label="Sort by role">
+                                <span class="sort-icon" aria-hidden="true">⇅</span>
+                            </button>
+                        </span>
+                    </th>
+                    <th data-sort-col="1">
+                        <span class="th-header">
+                            <span>Users</span>
+                            <button type="button" class="sort-btn" aria-label="Sort by user count">
+                                <span class="sort-icon" aria-hidden="true">⇅</span>
+                            </button>
+                        </span>
+                    </th>
+                    <th class="no-sort">Access level</th>
                     <th class="no-sort">Actions</th>
                 </tr>
             </thead>
@@ -59,4 +73,9 @@
         </table>
     </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='admin_table.js') }}"></script>
+<script>initSortableTable('rolesTable', 0, 'asc');</script>
 {% endblock %}

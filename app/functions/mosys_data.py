@@ -42,32 +42,17 @@ MIS_COLS = ['MIS01', 'MIS02', 'MIS03', 'MIS04', 'MIS05',
 NATURAL_KEY_COLS = ['ARTICOLO', 'DATA_RILEVAMENTO', 'ORA_RILEVAMENTO',
                     'NUMERO_RIFERIMENTO', 'NUMERO_STAMPATA', 'NUMERO_FIGURA']
 
-# User-friendly captions (routes.py COLUMN_LABELS + spec.md aliases).
-COLUMN_LABELS = {
-    'DATA_RILEVAMENTO': 'Measurement date',
-    'ORA_RILEVAMENTO': 'Measurement time',
-    'DESCRIZIONE': 'Drawing specification',
-    'NUMERO_STAMPATA': 'Shot number',
-    'NUMERO_FIGURA': 'Cavity number',
-    'MIS01': 'Measurement 1', 'MIS02': 'Measurement 2', 'MIS03': 'Measurement 3',
-    'MIS04': 'Measurement 4', 'MIS05': 'Measurement 5', 'MIS06': 'Measurement 6',
-    'MIS07': 'Measurement 7', 'MIS08': 'Measurement 8', 'MIS09': 'Measurement 9',
-    'MIS10': 'Measurement 10',
-}
-
-# Display columns shown in the Measurements table, in order (ARTICOLO removed per
-# spec.md; DESCRIZIONE from the NSCHEDIM join replaces NUMERO_RIFERIMENTO).
+# Display columns for the mosys_cli.py table printout, in order (ARTICOLO
+# removed per spec.md; DESCRIZIONE from the NSCHEDIM enrichment replaces
+# NUMERO_RIFERIMENTO).
 DISPLAY_COLUMNS = ['DATA_RILEVAMENTO', 'ORA_RILEVAMENTO', 'DESCRIZIONE',
                    'NUMERO_STAMPATA', 'NUMERO_FIGURA'] + MIS_COLS
 
-# Volume guards for the live DB (~4.5M NRILDIM rows). The Measurements browse
-# table pulls at most BROWSE_ROW_CAP rows (newest first) so a no/broad-filter
-# visit can never drag the whole table into pandas/the browser. The SPC page
-# refuses to build OR commit a tweak whose selection exceeds SPC_MAX_ROWS — the
-# preview and the authoritative commit MUST see identical data, so both are
-# bounded by the same ceiling (never by a silent TOP, which would corrupt the
-# squeeze mean). Both are env-overridable for tuning on the RDP.
-BROWSE_ROW_CAP = int(os.environ.get('MOSYS_BROWSE_ROW_CAP', '5000') or '5000')
+# Volume guard for the live DB (~4.5M NRILDIM rows). The SPC page refuses to
+# build OR commit a tweak whose selection exceeds SPC_MAX_ROWS — the preview
+# and the authoritative commit MUST see identical data, so both are bounded by
+# the same ceiling (never by a silent TOP, which would corrupt the squeeze
+# mean). Env-overridable for tuning on the RDP.
 SPC_MAX_ROWS = int(os.environ.get('MOSYS_SPC_MAX_ROWS', '50000') or '50000')
 
 
@@ -104,11 +89,11 @@ def build_nrildim_query(filters, limit=None):
     NSCHEDIM.NUMERO_RIFERIMENTO fans out — ~half the dimensions have >1 row — so
     the join multiplied every measurement row.)
 
-    When ``limit`` is set (the Measurements browse path) the query returns at most
-    that many rows, NEWEST first (``TOP n`` + descending order). When ``limit`` is
-    None (the SPC path) results stay in chronological order, which the chart and
-    flatten-picks neighbour logic require; that path is kept safe by the caller's
-    COUNT guard, not by truncation.
+    ``limit`` optionally caps the result to the newest ``limit`` rows (``TOP n``
+    + descending order) — unused by the SPC page itself, which always needs
+    the full chronological selection (kept safe by the caller's COUNT guard,
+    not by truncation) since the chart and flatten-picks neighbour logic
+    require chronological order.
     """
     where, params = _nrildim_where(filters)
     top = f"TOP {int(limit)} " if limit else ""
@@ -299,26 +284,18 @@ def format_measurements(df):
     return df
 
 
-def valid_mis_columns(df):
-    """MIS columns that are present and have at least one non-null value."""
-    return [c for c in MIS_COLS if c in df.columns and df[c].notna().any()]
-
-
-def fetch_measurements(filters, offline_demo=False, limit=None):
+def fetch_measurements(filters, offline_demo=False):
     """Fetch + format the filtered NRILDIM data. Returns a formatted DataFrame.
 
-    ``limit`` bounds the browse path (newest ``limit`` rows); leave it None for
-    the SPC path, which must see the whole chronological selection (kept safe by
-    a COUNT guard, not truncation). When ``offline_demo`` is True the data comes
+    Always the whole chronological selection — the SPC page is the only
+    caller, and it must see everything it will preview/commit (kept safe by a
+    COUNT guard, not truncation). When ``offline_demo`` is True the data comes
     from the fabricated synthetic SQLite (config.OFFLINE_DEMO) instead of the
     live DB — the live DB is never contacted in that mode.
     """
     if offline_demo:
-        df = _offline_measurements(filters)
-        if limit and df is not None and not df.empty:
-            df = df.tail(int(limit)).reset_index(drop=True)  # newest rows
-        return format_measurements(df)
-    query, params = build_nrildim_query(filters, limit=limit)
+        return format_measurements(_offline_measurements(filters))
+    query, params = build_nrildim_query(filters)
     logger.info("fetch_measurements query=%s params=%s", query, params)
     df = get_pervasive(query, params=params)
     df = _enrich_dimension_metadata(df)   # replaces the removed NSCHEDIM join

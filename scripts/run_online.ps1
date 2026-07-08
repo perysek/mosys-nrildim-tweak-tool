@@ -16,8 +16,7 @@ $root = Split-Path -Parent $PSScriptRoot
 $env:MOSYS_OFFLINE_DEMO     = ''      # OFF -> serve REAL data from STAAMP_DB
 $env:FLASK_DEBUG            = ''      # OFF -> no Werkzeug RCE console / reloader
 $env:MOSYS_DB_CONNECT_TIMEOUT = '15' # fail fast if the DSN is unreachable
-# Volume guards (defaults shown; raise only if you know the selection is safe):
-# $env:MOSYS_BROWSE_ROW_CAP = '5000'
+# Volume guard (default shown; raise only if you know the selection is safe):
 # $env:MOSYS_SPC_MAX_ROWS   = '50000'
 
 # --- PHASE B: production writes -----------------------------------------------

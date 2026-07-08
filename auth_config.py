@@ -26,7 +26,7 @@ def role_required(*role_names):
                 return redirect(url_for('login'))
             if current_user.role not in role_names:
                 flash('You do not have permission to access this page.', 'error')
-                return redirect(url_for('index'))
+                return redirect(url_for('spc_tweaks'))
             return f(*args, **kwargs)
         return decorated
     return decorator
@@ -43,7 +43,7 @@ def full_access_required(f):
             return redirect(url_for('login'))
         if not _role_repo.role_has_full_access(current_user.role):
             flash('Your role has read-only access — writes are not permitted.', 'error')
-            return redirect(url_for('index'))
+            return redirect(url_for('spc_tweaks'))
         return f(*args, **kwargs)
     return decorated
 

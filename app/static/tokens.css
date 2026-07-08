@@ -2,8 +2,7 @@
    tokens.css — Design token layer + refined-minimal component classes
    Ported (plain CSS, no Tailwind build) from claude-code-requirements/
    GUI-GOLDEN-BOOK.md §3/§5/§6/§10/§12/§13. System A "refined minimal" (2px radius,
-   warm-light + gold #c9a227, Inter). Applies to the NEW app-shell pages only;
-   existing style.css is untouched (blast-radius limit, IMPLEMENTATION-PLAN §3.2).
+   warm-light + gold #c9a227, Inter).
    ========================================================================== */
 
 :root {
@@ -364,9 +363,12 @@ input[type="range"].refined-range::-moz-range-thumb {
     background: #fff;
     border: 1px solid var(--color-border);
     border-radius: var(--radius-sm);
-    /* Horizontal-only scroll: the wrapper never scrolls vertically. */
+    /* overflow-y must be auto, not hidden: hidden still establishes a scroll
+       container (so the sticky thead below binds to it), but with no
+       scrollbar and no other scrolling ancestor, rows past the visible
+       height become permanently unreachable rather than just off-screen. */
     overflow-x: auto;
-    overflow-y: hidden;
+    overflow-y: auto;
     flex: 1;
     min-height: 0;
     position: relative;
@@ -422,6 +424,12 @@ input[type="range"].refined-range::-moz-range-thumb {
 }
 
 .refined-table tbody tr:hover { background: var(--color-surface); }
+
+/* Opt-in modifier — admin list tables (Users/Employees/Roles) center row
+   values instead of the default top-align, which reads awkwardly once a
+   row has multi-control cells (buttons, a switch) of varying height. */
+.table-align-middle th,
+.table-align-middle td { vertical-align: middle; }
 
 .refined-table td.num {
     font-variant-numeric: tabular-nums;

@@ -14,14 +14,49 @@
     </div>
 
     <div class="table-container">
-        <table class="refined-table">
+        <table class="refined-table table-align-middle" id="usersTable">
             <thead>
                 <tr>
-                    <th>Full name</th>
-                    <th>Role</th>
-                    <th>Employee ID</th>
-                    <th>Status</th>
-                    <th>Last login</th>
+                    <th data-sort-col="0">
+                        <span class="th-header">
+                            <span>Full name</span>
+                            <button type="button" class="sort-btn" aria-label="Sort by full name">
+                                <span class="sort-icon" aria-hidden="true">⇅</span>
+                            </button>
+                        </span>
+                    </th>
+                    <th data-sort-col="1">
+                        <span class="th-header">
+                            <span>Role</span>
+                            <button type="button" class="sort-btn" aria-label="Sort by role">
+                                <span class="sort-icon" aria-hidden="true">⇅</span>
+                            </button>
+                        </span>
+                    </th>
+                    <th data-sort-col="2">
+                        <span class="th-header">
+                            <span>Employee ID</span>
+                            <button type="button" class="sort-btn" aria-label="Sort by employee ID">
+                                <span class="sort-icon" aria-hidden="true">⇅</span>
+                            </button>
+                        </span>
+                    </th>
+                    <th data-sort-col="3">
+                        <span class="th-header">
+                            <span>Status</span>
+                            <button type="button" class="sort-btn" aria-label="Sort by status">
+                                <span class="sort-icon" aria-hidden="true">⇅</span>
+                            </button>
+                        </span>
+                    </th>
+                    <th data-sort-col="4">
+                        <span class="th-header">
+                            <span>Last login</span>
+                            <button type="button" class="sort-btn" aria-label="Sort by last login">
+                                <span class="sort-icon" aria-hidden="true">⇅</span>
+                            </button>
+                        </span>
+                    </th>
                     <th class="no-sort">Actions</th>
                 </tr>
             </thead>
@@ -56,4 +91,9 @@
         </table>
     </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='admin_table.js') }}"></script>
+<script>initSortableTable('usersTable', 0, 'asc');</script>
 {% endblock %}

@@ -35,8 +35,7 @@ def inject_auth_context():
     }
 
 
-from app import routes
-from app import spc_routes  # Measurements + SPC-Tweaks pages
+from app import spc_routes  # SPC-Tweaks page
 from app import auth_routes
 from app import users_routes
 from app import employees_routes
