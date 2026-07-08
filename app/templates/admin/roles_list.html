@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}Roles — MOSYS{% endblock %}
+{% block header_title %}Roles{% endblock %}
+
+{% block content %}
+<div class="refined-page">
+    <div class="page-header">
+        <div>
+            <h1 class="page-title">Roles</h1>
+            <p class="page-subtitle">
+                Full access allows the SPC-Tweaks write path — also gated by the server-wide write flag.
+            </p>
+        </div>
+    </div>
+
+    <div class="table-container">
+        <table class="refined-table table-align-middle" id="rolesTable">
+            <thead>
+                <tr>
+                    <th data-sort-col="0">
+                        <span class="th-header">
+                            <span>Role</span>
+                            <button type="button" class="sort-btn" aria-label="Sort by role">
+                                <span class="sort-icon" aria-hidden="true">⇅</span>
+                            </button>
+                        </span>
+                    </th>
+                    <th data-sort-col="1">
+                        <span class="th-header">
+                            <span>Users</span>
+                            <button type="button" class="sort-btn" aria-label="Sort by user count">
+                                <span class="sort-icon" aria-hidden="true">⇅</span>
+                            </button>
+                        </span>
+                    </th>
+                    <th class="no-sort">Access level</th>
+                    <th class="no-sort">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in roles %}
+                <tr>
+                    <td>
+                        {{ r['display_name'] }}
+                        {% if r['is_protected'] %}<span style="color:var(--color-ink-subtle);font-size:0.72rem;">(protected)</span>{% endif %}
+                    </td>
+                    <td class="num">{{ r['user_count'] }}</td>
+                    <td>
+                        <form method="POST" action="{{ url_for('role_toggle_access', role_id=r['id']) }}">
+                            <label class="switch">
+                                <input type="checkbox" {% if r['full_access'] %}checked{% endif %}
+                                       {% if r['is_protected'] %}disabled{% endif %}
+                                       onchange="this.form.submit()">
+                                <span class="switch-track"><span class="switch-thumb"></span></span>
+                                {{ 'Full access' if r['full_access'] else 'Read-only' }}
+                            </label>
+                        </form>
+                    </td>
+                    <td>
+                        {% if not r['is_protected'] %}
+                        <form method="POST" action="{{ url_for('role_delete', role_id=r['id']) }}" style="display:inline;">
+                            <button type="button" class="btn-refined btn-refined-ghost btn-press" style="color:var(--color-error);"
+                                    data-name="{{ r['display_name'] }}"
+                                    onclick="confirmFormAction(this, 'Delete role', 'Delete', 'danger')">
+                                Delete
+                            </button>
+                        </form>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='admin_table.js') }}"></script>
+<script>initSortableTable('rolesTable', 0, 'asc');</script>
+{% endblock %}

@@ -30,8 +30,11 @@ results_columns = [
 MIS01, MIS02, MIS03, MIS04, MIS05, MIS06, MIS07, MIS08, MIS09, MIS10
 ]
 **Note:
-If the values are strings, they should be converted to numbers and divided by 1000 before being displayed.
-If the values are numbers, they should be only divided by 1000 before being displayed.
+If the values are strings, they should be converted to numbers and divided by 10000 before being displayed.
+If the values are numbers, they should be only divided by 10000 before being displayed.
+(Corrected 2026-07-01: the scale factor is 10000, not 1000 — authoritative source is
+app/routes.py L176/L268 which divides MIS01-10 by 10000.0, and the in-tolerance/Cp/Cpk
+logic is coherent only at ÷10000. See IMPLEMENTATION-PLAN.md §2.1.)
 **
 
 **pandas library should be used for data manipulation and display.**

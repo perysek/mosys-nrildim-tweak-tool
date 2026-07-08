@@ -21,3 +21,8 @@ Thumbs.db
 # Local session / scratch
 .remember/logs/
 *.log
+.playwright-mcp/
+
+# Mock data + write journal (generated locally, never committed)
+app/data/
+scripts/mock_report.md

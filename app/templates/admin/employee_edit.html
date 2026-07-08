@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Edit {{ employee['full_name'] }} — MOSYS{% endblock %}
+{% block header_title %}Edit employee account{% endblock %}
+
+{% block content %}
+<div class="refined-page">
+    <div class="page-header">
+        <div>
+            <h1 class="page-title">Edit {{ employee['full_name'] }}</h1>
+            <p class="page-subtitle">MOSYS ID {{ employee['mosys_employee_id'] }} — account name and role</p>
+        </div>
+    </div>
+
+    <div class="panel" style="max-width:28rem;">
+        <form method="POST">
+            <div style="margin-bottom:0.75rem;">
+                <label class="field-label" for="full_name">Full name</label>
+                <input type="text" id="full_name" name="full_name" class="refined-input"
+                       value="{{ user.full_name }}" required>
+            </div>
+            <div style="margin-bottom:1rem;">
+                <label class="field-label" for="role">Role</label>
+                <select id="role" name="role" class="refined-select">
+                    {% for r in roles %}
+                    <option value="{{ r['name'] }}" {% if r['name'] == user.role %}selected{% endif %}>{{ r['display_name'] }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div style="display:flex;gap:0.5rem;">
+                <button type="submit" class="btn-refined btn-refined-primary btn-press">Save</button>
+                <a class="btn-refined btn-refined-secondary btn-press" href="{{ url_for('employees_list') }}">Cancel</a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,761 @@
+{% extends "base.html" %}
+{% block title %}SPC Tweaks — MOSYS{% endblock %}
+{% block header_title %}SPC Tweaks{% endblock %}
+
+{% block extra_head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+    .filter-bar { display: flex; gap: 1rem; align-items: flex-end; flex-wrap: wrap; margin-bottom: 1rem; }
+    .combo { position: relative; display: flex; flex-direction: column; }
+    .combo.part { min-width: 16rem; }
+    .combo.dim { min-width: 22rem; flex: 1; }
+    .combo-input-wrap { position: relative; }
+    .combo-list {
+        position: absolute; z-index: 30; top: calc(100% + 2px); left: 0; right: 0;
+        max-height: 16rem; overflow-y: auto; margin: 0; padding: 0.25rem; list-style: none;
+        background: var(--color-surface); border: 1px solid var(--color-border);
+        border-radius: var(--radius-sm); box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+    }
+    .combo-list[hidden] { display: none; }
+    .combo-list li {
+        padding: 0.4rem 0.55rem; border-radius: var(--radius-sm); cursor: pointer;
+        font-size: 0.85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .combo-list li:hover, .combo-list li.is-active { background: var(--color-accent-soft, #eef2ff); }
+    .combo-status { font-size: 0.72rem; color: var(--color-ink-subtle); margin-top: 0.25rem; min-height: 1rem; }
+    .combo-status.is-error { color: #b91c1c; }
+    input.refined-input:disabled { background: var(--color-surface-muted, #f3f4f6); cursor: not-allowed; }
+    .combo-spinner {
+        position: absolute; right: 0.6rem; top: 50%; width: 0.9rem; height: 0.9rem; margin-top: -0.45rem;
+        border: 2px solid var(--color-border); border-top-color: var(--color-accent-deep, #4338ca);
+        border-radius: 50%; animation: combo-spin 0.7s linear infinite;
+    }
+    .combo-spinner[hidden] { display: none; }
+    @keyframes combo-spin { to { transform: rotate(360deg); } }
+    .spc-grid { display: flex; gap: 1rem; align-items: stretch; flex: 1; min-height: 0; }
+    .chart-col { flex: 3; min-width: 0; display: flex; flex-direction: column; }
+    .chart-wrap { position: relative; flex: 1; min-height: 20rem; }
+    .chart-empty {
+        position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+        text-align: center; color: var(--color-ink-subtle); font-size: 0.9rem; padding: 1rem;
+    }
+    .chart-empty[hidden] { display: none; }
+    .side-col { flex: 1; min-width: 16rem; max-width: 22rem; display: flex; flex-direction: column; gap: 0.75rem; overflow-y: auto; }
+    .badge-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
+    .control-row { margin-bottom: 0.9rem; }
+    .control-row:last-child { margin-bottom: 0; }
+    .range-value { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--color-accent-deep); }
+    .dual-slider { position: relative; height: 1.5rem; }
+    .dual-slider input[type=range] { position: absolute; width: 100%; margin: 0; pointer-events: none; background: transparent; }
+    .dual-slider input[type=range]::-webkit-slider-thumb { pointer-events: auto; }
+    .dual-slider input[type=range]::-moz-range-thumb { pointer-events: auto; }
+    .dual-track { position: absolute; top: 0.65rem; left: 0; right: 0; height: 4px; background: var(--color-border); border-radius: 999px; }
+    .date-pickers { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.5rem; }
+    /* #4 fix: let the date input shrink and the time switch stay whole so the
+       'time' caption never overflows the Adjustments panel. */
+    .picker-line { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+    .picker-line > label { font-size: 0.72rem; color: var(--color-ink-subtle); width: 2.6rem; flex-shrink: 0; }
+    .picker-line .refined-input { flex: 1 1 6rem; min-width: 0; }
+    .picker-line .switch { flex-shrink: 0; font-size: 0.72rem; }
+    /* Tolerance readout (#3) */
+    .tol-readout { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.4rem; margin-bottom: 0.6rem; }
+    .tol-cell { text-align: center; padding: 0.35rem 0.25rem; border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface); }
+    .tol-cell .tol-label { display: block; font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--color-ink-subtle); }
+    .tol-cell .tol-value { display: block; font-variant-numeric: tabular-nums; font-weight: 600; font-size: 0.9rem; }
+    .cavity-select { width: 100%; }
+    .shift-note { font-size: 0.68rem; color: var(--color-ink-subtle); margin-top: 0.25rem; }
+    .spc-actions {
+        display: flex; justify-content: flex-end; align-items: center; gap: 0.75rem;
+        margin-top: 0.75rem; flex-shrink: 0;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="refined-page">
+    <div class="page-header">
+        <div>
+            <h1 class="page-title">SPC Tweaks</h1>
+            <p class="page-subtitle">Squeeze spread &amp; flatten picks per cavity — grouped by NUMERO_FIGURA</p>
+        </div>
+    </div>
+
+    <div class="filter-bar">
+        <div class="combo part" id="combo-part">
+            <label class="field-label" for="part-input">Part number (CODICE_ARTICOLO)</label>
+            <div class="combo-input-wrap">
+                <input type="text" id="part-input" class="refined-input" autocomplete="off"
+                       role="combobox" aria-expanded="false" aria-autocomplete="list"
+                       placeholder="Search part number…">
+            </div>
+            <ul class="combo-list" id="part-list" role="listbox" hidden></ul>
+        </div>
+
+        <div class="combo dim" id="combo-dim">
+            <label class="field-label" for="dim-input">Drawing specification (DESCRIZIONE)</label>
+            <div class="combo-input-wrap">
+                <input type="text" id="dim-input" class="refined-input" autocomplete="off" disabled
+                       role="combobox" aria-expanded="false" aria-autocomplete="list"
+                       placeholder="Select a part number first">
+                <span class="combo-spinner" id="dim-spinner" hidden></span>
+            </div>
+            <ul class="combo-list" id="dim-list" role="listbox" hidden></ul>
+            <span class="combo-status" id="dim-status"></span>
+        </div>
+
+        <button type="button" id="get-data-btn" class="btn-refined btn-refined-primary btn-press" disabled>
+            Load
+        </button>
+    </div>
+
+    {% if error %}
+    <div class="warn-note" role="alert">{{ error }}</div>
+    {% endif %}
+
+    {% if needs_filter %}
+    <div class="info-note" role="status">
+        Select a <strong>part number</strong>, then a <strong>drawing specification</strong>
+        above, and press <strong>Load</strong>. This page tweaks one selection at a time — an
+        unfiltered load isn't supported (it would scan the full 4.5&nbsp;million-row table).
+    </div>
+    {% else %}
+    <div class="spc-grid">
+        <div class="chart-col panel">
+            <div class="chart-wrap">
+                <canvas id="spcChart"></canvas>
+                <div id="chart-empty" class="chart-empty" hidden>
+                    No measurements in the selected date range.
+                </div>
+            </div>
+        </div>
+
+        <div class="side-col">
+            <div class="panel">
+                <p class="panel-title">Cavity</p>
+                <select id="cavity-select" class="refined-input cavity-select"
+                        aria-label="Cavity (NUMERO_FIGURA) shown in chart and stats">
+                    <!-- options injected by JS from the available cavities -->
+                </select>
+                <p class="shift-note">Stats and chart are computed for the selected cavity only.</p>
+            </div>
+
+            <div class="panel">
+                <p class="panel-title">Capability &amp; spread</p>
+                <div class="tol-readout">
+                    <div class="tol-cell"><span class="tol-label">Nominal</span>
+                        <span class="tol-value">{{ '%.3f'|format(nominal) if nominal is not none else '—' }}</span></div>
+                    <div class="tol-cell"><span class="tol-label">LSL</span>
+                        <span class="tol-value">{{ '%.3f'|format(lsl) if lsl is not none else '—' }}</span></div>
+                    <div class="tol-cell"><span class="tol-label">USL</span>
+                        <span class="tol-value">{{ '%.3f'|format(usl) if usl is not none else '—' }}</span></div>
+                </div>
+                {% if nominal is none %}
+                <p class="shift-note">No tolerance for this dimension — pick a NUMERO_RIFERIMENTO to load Nominal/USL/LSL.</p>
+                {% endif %}
+                <div class="badge-grid">
+                    <div class="stat-badge"><span class="stat-label">Cp</span><span class="stat-value" id="b-cp">—</span></div>
+                    <div class="stat-badge"><span class="stat-label">Cpk</span><span class="stat-value" id="b-cpk">—</span></div>
+                    <div class="stat-badge"><span class="stat-label">Min</span><span class="stat-value" id="b-min">—</span></div>
+                    <div class="stat-badge"><span class="stat-label">Max</span><span class="stat-value" id="b-max">—</span></div>
+                    <div class="stat-badge"><span class="stat-label">Avg</span><span class="stat-value" id="b-avg">—</span></div>
+                    <div class="stat-badge"><span class="stat-label">Range</span><span class="stat-value" id="b-range">—</span></div>
+                </div>
+            </div>
+
+            <div class="panel">
+                <p class="panel-title">Adjustments</p>
+
+                <div class="control-row">
+                    <label class="field-label" for="squeeze">Spread squeeze — <span class="range-value" id="squeeze-val">0%</span></label>
+                    <input type="range" id="squeeze" class="refined-range" min="0" max="90" step="1" value="0"
+                           aria-label="Spread squeeze percentage">
+                </div>
+
+                <div class="control-row">
+                    <label class="field-label" for="shift">Center shift — <span class="range-value" id="shift-val">0%</span></label>
+                    <input type="range" id="shift" class="refined-range" min="-100" max="100" step="1" value="0"
+                           aria-label="Center shift percentage" {% if nominal is none %}disabled{% endif %}>
+                    <p class="shift-note">+100% moves the cavity mean onto Nominal (tunes Cpk); Cp is set by squeeze.</p>
+                </div>
+
+                <div class="control-row">
+                    <label class="switch">
+                        <input type="checkbox" id="flatten" {% if nominal is none %}disabled{% endif %}>
+                        <span class="switch-track"><span class="switch-thumb"></span></span>
+                        <span>flatten picks</span>
+                    </label>
+                    {% if nominal is none %}
+                    <p class="page-subtitle" style="margin-top:0.35rem;">Nominal value unavailable — flatten disabled.</p>
+                    {% endif %}
+                </div>
+
+                <div class="control-row">
+                    <p class="field-label">Date range (last 30 days)</p>
+                    <div class="dual-slider">
+                        <div class="dual-track"></div>
+                        <input type="range" id="range-min" min="0" max="43200" step="1" value="0" aria-label="Range start">
+                        <input type="range" id="range-max" min="0" max="43200" step="1" value="43200" aria-label="Range end">
+                    </div>
+                    <div class="date-pickers">
+                        <div class="picker-line">
+                            <label for="start-picker">Start</label>
+                            <input type="date" id="start-picker" class="refined-input">
+                            <label class="switch" title="Enable start time precision">
+                                <input type="checkbox" id="start-time-toggle">
+                                <span class="switch-track"><span class="switch-thumb"></span></span>
+                                <span>time</span>
+                            </label>
+                        </div>
+                        <div class="picker-line">
+                            <label for="end-picker">End</label>
+                            <input type="date" id="end-picker" class="refined-input">
+                            <label class="switch" title="Enable end time precision">
+                                <input type="checkbox" id="end-time-toggle">
+                                <span class="switch-track"><span class="switch-thumb"></span></span>
+                                <span>time</span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="spc-actions">
+        {% if not write_enabled %}
+        <span class="page-subtitle" style="margin-right:auto;">Preview mode — production writes are disabled.</span>
+        {% endif %}
+        <label class="switch">
+            <input type="checkbox" id="preview-toggle">
+            <span class="switch-track"><span class="switch-thumb"></span></span>
+            <span>Preview</span>
+        </label>
+        <button type="button" id="commit-btn" class="btn-refined btn-refined-accent btn-press">Commit</button>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // ---- Part number / drawing specification filter bar --------------------
+    // Runs regardless of needs_filter — this is how a selection gets made.
+    var PART_NUMBERS = {{ part_numbers|tojson }};
+    var INIT = {
+        articolo: {{ (filters.articolo or '')|tojson }},
+        numero_riferimento: {{ (filters.numero_riferimento or '')|tojson }},
+        descrizione: {{ (selected_descrizione or '')|tojson }}
+    };
+    var DIMENSIONS_URL = {{ url_for('spc_tweaks_dimensions')|tojson }};
+
+    var selectedArticolo = '';
+    var selectedRif = '';
+
+    function escapeHtml(s) {
+        return String(s).replace(/[&<>"']/g, function (c) {
+            return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+        });
+    }
+
+    // ---- Reusable searchable combobox ------------------------------------
+    function makeCombo(rootId, onSelect) {
+        var root = document.getElementById(rootId);
+        var input = root.querySelector('input');
+        var list = root.querySelector('.combo-list');
+        var items = [];       // [{value, label}]
+        var filtered = [];
+
+        function render() {
+            var q = input.value.trim().toLowerCase();
+            filtered = q ? items.filter(function (it) { return it.label.toLowerCase().indexOf(q) !== -1; })
+                         : items.slice();
+            filtered = filtered.slice(0, 300);
+            list.innerHTML = filtered.map(function (it, i) {
+                return '<li role="option" data-i="' + i + '">' + escapeHtml(it.label) + '</li>';
+            }).join('');
+            var show = filtered.length > 0 && !input.disabled;
+            list.hidden = !show;
+            input.setAttribute('aria-expanded', String(show));
+        }
+        function close() { list.hidden = true; input.setAttribute('aria-expanded', 'false'); }
+
+        input.addEventListener('focus', render);
+        input.addEventListener('input', render);
+        input.addEventListener('blur', function () { setTimeout(close, 150); });
+        list.addEventListener('mousedown', function (e) {   // mousedown fires before blur
+            var li = e.target.closest('li');
+            if (!li) return;
+            var it = filtered[parseInt(li.getAttribute('data-i'), 10)];
+            if (!it) return;
+            input.value = it.label;
+            close();
+            if (onSelect) onSelect(it);
+        });
+
+        return {
+            setItems: function (arr) { items = arr; },
+            setDisabled: function (d) { input.disabled = d; if (d) close(); },
+            setValue: function (v) { input.value = v || ''; },
+            focus: function () { input.focus(); }
+        };
+    }
+
+    var getBtn = document.getElementById('get-data-btn');
+    var dimStatus = document.getElementById('dim-status');
+    var dimSpinner = document.getElementById('dim-spinner');
+
+    function updateGetBtn() { getBtn.disabled = !(selectedArticolo && selectedRif); }
+
+    var dimCombo = makeCombo('combo-dim', function (it) {
+        selectedRif = it.value;
+        updateGetBtn();
+    });
+    dimCombo.setItems([]);
+
+    // Per-article cache of the measured-dimensions list, in sessionStorage so it
+    // survives full-page navigations within this tab (a "Load" and reload both
+    // re-run the init-from-URL path). The dimension scan is a ~10-15s
+    // article-scoped query on the 4.5M-row NRILDIM, so we run it at most ONCE
+    // per part number per session and read from cache thereafter.
+    function dimsCacheGet(articolo) {
+        try { return JSON.parse(sessionStorage.getItem('spcdims:' + articolo) || 'null'); }
+        catch (e) { return null; }
+    }
+    function dimsCacheSet(articolo, dims) {
+        try { sessionStorage.setItem('spcdims:' + articolo, JSON.stringify(dims)); }
+        catch (e) { /* quota / disabled storage — just skip caching */ }
+    }
+
+    // Populate the dimension combobox from a dims array (shared by cache-hit and
+    // AJAX-success paths). Re-selects preserveRif (the caption) when given.
+    function applyDims(dims, preserveRif, preserveLabel) {
+        dimSpinner.hidden = true;
+        dimCombo.setItems(dims.map(function (d) {
+            return { value: d.numero_riferimento, label: d.descrizione };
+        }));
+        if (dims.length === 0) {
+            dimCombo.setDisabled(true);
+            dimStatus.textContent = 'No measured dimensions for this part number.';
+        } else {
+            dimCombo.setDisabled(false);
+            dimStatus.textContent = dims.length + ' measured dimension'
+                + (dims.length === 1 ? '' : 's') + ' — type to search.';
+        }
+        if (preserveRif) {
+            selectedRif = preserveRif;
+            dimCombo.setValue(preserveLabel || preserveRif);
+        }
+        updateGetBtn();
+    }
+
+    // Load the MEASURED dimensions for a part number. Cache hit -> instant, no DB
+    // query; cache miss -> one AJAX scan, then cached for the rest of the session.
+    // If preserveRif is given (init from a URL selection), reselect it once loaded.
+    function loadDimensions(articolo, preserveRif, preserveLabel) {
+        selectedRif = preserveRif || '';
+        dimCombo.setItems([]);
+        dimCombo.setValue(preserveLabel || '');
+        updateGetBtn();
+
+        var cached = dimsCacheGet(articolo);
+        if (cached) {                       // no DB query — reused from this session
+            applyDims(cached, preserveRif, preserveLabel);
+            return;
+        }
+
+        dimCombo.setDisabled(true);
+        dimStatus.textContent = 'Loading dimensions…';
+        dimStatus.classList.remove('is-error');
+        dimSpinner.hidden = false;
+
+        fetch(DIMENSIONS_URL + '?articolo=' + encodeURIComponent(articolo))
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                var dims = (data && data.dimensions) || [];
+                dimsCacheSet(articolo, dims);   // reuse on subsequent reloads
+                applyDims(dims, preserveRif, preserveLabel);
+            })
+            .catch(function () {
+                dimSpinner.hidden = true;
+                dimCombo.setDisabled(true);
+                dimStatus.textContent = 'Could not load dimensions. Try again.';
+                dimStatus.classList.add('is-error');
+            });
+    }
+
+    var partCombo = makeCombo('combo-part', function (it) {
+        selectedArticolo = it.value;
+        loadDimensions(it.value, '', '');
+    });
+    partCombo.setItems(PART_NUMBERS.map(function (a) { return { value: a, label: a }; }));
+
+    getBtn.addEventListener('click', function () {
+        if (!(selectedArticolo && selectedRif)) return;
+        window.location.href = '{{ url_for("spc_tweaks") }}?articolo='
+            + encodeURIComponent(selectedArticolo)
+            + '&numero_riferimento=' + encodeURIComponent(selectedRif);
+    });
+
+    // ---- Initialise from the current URL selection -----------------------
+    if (INIT.articolo) {
+        selectedArticolo = INIT.articolo;
+        partCombo.setValue(INIT.articolo);
+        loadDimensions(INIT.articolo, INIT.numero_riferimento,
+                       INIT.descrizione || INIT.numero_riferimento);
+    }
+</script>
+{% if not needs_filter %}
+<script src="{{ url_for('static', filename='spc_transform.js') }}"></script>
+<script>
+    // ---- Server data ------------------------------------------------------
+    var CURRENT_SERIES = {{ current_series|safe }};
+    var USL = {{ usl if usl is not none else 'null' }};
+    var LSL = {{ lsl if lsl is not none else 'null' }};
+    var NOMINAL = {{ nominal if nominal is not none else 'null' }};
+    var PICK_THRESHOLD = {{ pick_threshold }};
+    var WRITE_ENABLED = {{ 'true' if write_enabled else 'false' }};
+    var FILTERS = {
+        articolo: {{ (filters.articolo or '')|tojson }},
+        numero_riferimento: {{ (filters.numero_riferimento or '')|tojson }},
+        date_from: {{ (filters.date_from or '')|tojson }},
+        date_to: {{ (filters.date_to or '')|tojson }}
+    };
+    var SLIDER = { min: {{ slider.min|tojson }}, max: {{ slider.max|tojson }} };
+    var SELECTED_CAVITY = {{ (selected_cavity or '')|tojson }};
+
+    // ---- Cavity view state (#0: stats + chart are per-cavity) -------------
+    var CAVITIES = Object.keys(CURRENT_SERIES);
+    // Default to the carried cavity if present, else the first available one.
+    var activeCavity = (SELECTED_CAVITY && CURRENT_SERIES[SELECTED_CAVITY]) ? SELECTED_CAVITY
+                     : (CAVITIES.length ? CAVITIES[0] : '');
+
+    function pickSeries(series) {
+        // Restrict a full multi-cavity series object to the active cavity.
+        if (activeCavity === '__ALL__' || !activeCavity) return series;
+        var out = {};
+        if (series[activeCavity]) out[activeCavity] = series[activeCavity];
+        return out;
+    }
+    function activeMean() {
+        var s = pickSeries(CURRENT_SERIES), vals = [];
+        Object.keys(s).forEach(function (f) {
+            (s[f].values || []).forEach(function (v) { if (v !== null && v !== undefined) vals.push(v); });
+        });
+        if (!vals.length) return null;
+        return vals.reduce(function (a, b) { return a + b; }, 0) / vals.length;
+    }
+    // Center-shift slider (t in [-100,100]) -> absolute offset. +100% lands the
+    // active cavity mean exactly on Nominal. Zero / no-nominal => no shift.
+    function shiftOffset() {
+        var t = parseInt(document.getElementById('shift').value, 10) / 100.0;
+        if (!t || NOMINAL === null) return 0;
+        var m = activeMean();
+        if (m === null) return 0;
+        return t * (NOMINAL - m);
+    }
+
+    // ---- Local-time date parsing (per date-formatting rule) --------------
+    function parseLocal(str) {
+        if (!str) return null;
+        var d = str.split('T');
+        var ymd = d[0].split('-').map(Number);
+        var hms = (d[1] || '00:00:00').split(':').map(Number);
+        return new Date(ymd[0], ymd[1] - 1, ymd[2], hms[0] || 0, hms[1] || 0, hms[2] || 0);
+    }
+    function fmtDate(dt) {
+        return dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0') + '-' +
+               String(dt.getDate()).padStart(2, '0');
+    }
+
+    // ---- Stats over a series (for tweaked badges) ------------------------
+    function seriesStats(series) {
+        var vals = [];
+        Object.keys(series).forEach(function (f) { vals = vals.concat(series[f].values); });
+        if (!vals.length) return { min: null, max: null, avg: null, range: null, cp: null, cpk: null };
+        var min = Math.min.apply(null, vals), max = Math.max.apply(null, vals);
+        var mean = vals.reduce(function (a, b) { return a + b; }, 0) / vals.length;
+        var out = { min: min, max: max, avg: mean, range: max - min, cp: null, cpk: null };
+        if (USL !== null && LSL !== null && vals.length > 1) {
+            var variance = vals.reduce(function (a, b) { return a + (b - mean) * (b - mean); }, 0) / (vals.length - 1);
+            var std = Math.sqrt(variance);
+            if (std > 0) {
+                out.cp = (USL - LSL) / (6 * std);
+                out.cpk = Math.min((USL - mean) / (3 * std), (mean - LSL) / (3 * std));
+            }
+        }
+        return out;
+    }
+    function setBadges(stats, tweaked) {
+        function put(id, v) {
+            var el = document.getElementById(id);
+            el.textContent = (v === null || v === undefined) ? '—' : (Math.round(v * 1000) / 1000).toFixed(3);
+            el.classList.toggle('is-tweaked', !!tweaked);
+        }
+        put('b-cp', stats.cp); put('b-cpk', stats.cpk); put('b-min', stats.min);
+        put('b-max', stats.max); put('b-avg', stats.avg); put('b-range', stats.range);
+    }
+
+    // ---- Chart ------------------------------------------------------------
+    var COLORS = ['#2563eb', '#ef4444', '#16a34a', '#ea580c', '#7c3aed', '#f59e0b', '#64748b', '#db2777'];
+    var chart = null;
+
+    function buildDatasets(series) {
+        var keys = Object.keys(series);
+        var allLabels = [];
+        keys.forEach(function (f) {
+            series[f].labels.forEach(function (l) { if (allLabels.indexOf(l) === -1) allLabels.push(l); });
+        });
+        allLabels.sort();
+        var datasets = keys.map(function (f, idx) {
+            var color = COLORS[idx % COLORS.length];
+            var lbls = series[f].labels, vals = series[f].values;
+            var aligned = allLabels.map(function (l) { var i = lbls.indexOf(l); return i >= 0 ? vals[i] : null; });
+            // TASK2: connect points with a line; spanGaps bridges the nulls that
+            // appear when multiple cavities share a union of x-labels.
+            return { label: 'Cavity: ' + f, data: aligned, borderColor: color,
+                     backgroundColor: color + '22', borderWidth: 2, pointRadius: 3, tension: 0.1,
+                     showLine: true, spanGaps: true };
+        });
+        function refLine(label, value, color, dash) {
+            return { label: label, data: allLabels.map(function () { return value; }), borderColor: color,
+                     borderWidth: 2, borderDash: dash, pointRadius: 0, tension: 0 };
+        }
+        if (USL !== null && LSL !== null) {
+            datasets.push(refLine('USL', USL, '#dc2626', [5, 5]));
+            datasets.push(refLine('LSL', LSL, '#dc2626', [5, 5]));
+        }
+        if (NOMINAL !== null) datasets.push(refLine('Nominal', NOMINAL, '#16a34a', [10, 5]));
+        return { labels: allLabels, datasets: datasets };
+    }
+
+    function seriesHasData(series) {
+        return Object.keys(series).some(function (f) {
+            return (series[f].values || []).some(function (v) { return v !== null && v !== undefined; });
+        });
+    }
+
+    // #2 fix: compute a STABLE y-range once per render that spans the original
+    // data, the tolerance band, and the full reach of the shift slider, so
+    // preview/squeeze/shift only move points — the axis ticks never jump, and
+    // out-of-spec points (e.g. an un-flattened pick) are never clipped off-chart.
+    function stableYRange(originalActive) {
+        var vals = [];
+        Object.keys(originalActive).forEach(function (f) {
+            (originalActive[f].values || []).forEach(function (v) {
+                if (v !== null && v !== undefined) vals.push(v);
+            });
+        });
+        var lo = [], hi = [];
+        if (vals.length) { lo.push(Math.min.apply(null, vals)); hi.push(Math.max.apply(null, vals)); }
+        if (USL !== null) hi.push(USL);
+        if (LSL !== null) lo.push(LSL);
+        if (NOMINAL !== null) { lo.push(NOMINAL); hi.push(NOMINAL); }
+        if (!lo.length) return {};
+        var dmin = Math.min.apply(null, lo), dmax = Math.max.apply(null, hi);
+        // Reach of the centering shift: at +/-100% the mean can move to nominal.
+        var reach = 0;
+        if (NOMINAL !== null && vals.length) {
+            var m = vals.reduce(function (a, b) { return a + b; }, 0) / vals.length;
+            reach = Math.abs(NOMINAL - m);
+        }
+        var pad = (dmax - dmin) * 0.1 + reach + 1e-6;
+        return { min: dmin - pad, max: dmax + pad };
+    }
+
+    function renderChart(series, originalActive) {
+        var empty = !seriesHasData(series);
+        document.getElementById('chart-empty').hidden = !empty;
+        document.getElementById('spcChart').style.visibility = empty ? 'hidden' : 'visible';
+        if (empty) { if (chart) { chart.destroy(); chart = null; } return; }
+        var d = buildDatasets(series);
+        var yCfg = { title: { display: true, text: 'Average measurement result' } };
+        var yr = stableYRange(originalActive || series);
+        if (yr.min !== undefined) { yCfg.min = yr.min; yCfg.max = yr.max; }
+        if (chart) { chart.destroy(); chart = null; }
+        var ctx = document.getElementById('spcChart').getContext('2d');
+        chart = new Chart(ctx, {
+            type: 'line',
+            data: d,
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                animation: { duration: 500, easing: 'easeOutQuart' },
+                plugins: { legend: { position: 'top' }, tooltip: { mode: 'index', intersect: false } },
+                scales: { x: { ticks: { maxRotation: 45, minRotation: 45 } }, y: yCfg }
+            }
+        });
+    }
+
+    // `animate=false` -> chart.update('none') so slider drags don't replay the
+    // 500ms animation (that lag was the "points don't match ticks" jitter, #2).
+    function updateChart(series, animate) {
+        if (!chart) return;   // empty state — nothing to update
+        var d = buildDatasets(series);
+        chart.data.labels = d.labels;
+        chart.data.datasets.forEach(function (ds, i) { if (d.datasets[i]) ds.data = d.datasets[i].data; });
+        chart.update(animate ? undefined : 'none');
+    }
+
+    // ---- Tweak state ------------------------------------------------------
+    function currentParams() {
+        return {
+            s: parseInt(document.getElementById('squeeze').value, 10) / 100.0,
+            shift: shiftOffset(),
+            flatten: document.getElementById('flatten').checked,
+            threshold: PICK_THRESHOLD
+        };
+    }
+    function computeTweaked() {
+        var p = currentParams();
+        return SPCTransform.tweakSeries(pickSeries(CURRENT_SERIES), p.s, p.shift, p.flatten,
+                                        p.threshold, NOMINAL);
+    }
+    function currentSeries() {
+        var previewing = document.getElementById('preview-toggle').checked;
+        return previewing ? computeTweaked() : pickSeries(CURRENT_SERIES);
+    }
+    // Full re-render (recompute the stable y-range) — for cavity switch / init.
+    function renderView() {
+        var previewing = document.getElementById('preview-toggle').checked;
+        renderChart(currentSeries(), pickSeries(CURRENT_SERIES));
+        setBadges(seriesStats(currentSeries()), previewing);
+    }
+    // Light update (keep axis) — for slider drags (animate=false) / toggle (true).
+    function refresh(animate) {
+        var previewing = document.getElementById('preview-toggle').checked;
+        var series = currentSeries();
+        updateChart(series, animate);
+        setBadges(seriesStats(series), previewing);
+    }
+
+    // ---- Date-range control ----------------------------------------------
+    (function initDateRange() {
+        var minDt = parseLocal(SLIDER.min), maxDt = parseLocal(SLIDER.max);
+        var totalMin = Math.max(1, Math.round((maxDt - minDt) / 60000));
+        var rMin = document.getElementById('range-min'), rMax = document.getElementById('range-max');
+        var sp = document.getElementById('start-picker'), ep = document.getElementById('end-picker');
+        rMin.max = String(totalMin); rMax.max = String(totalMin); rMax.value = String(totalMin);
+
+        function offToDate(off) { return new Date(minDt.getTime() + off * 60000); }
+        function dateToOff(dt) { return Math.round((dt - minDt) / 60000); }
+
+        // Initialise pickers from existing filters or slider extremes.
+        var startDt = FILTERS.date_from ? parseLocal(FILTERS.date_from) : minDt;
+        var endDt = FILTERS.date_to ? parseLocal(FILTERS.date_to) : maxDt;
+        sp.value = fmtDate(startDt); ep.value = fmtDate(endDt);
+        rMin.value = String(Math.min(Math.max(dateToOff(startDt), 0), totalMin));
+        rMax.value = String(Math.min(Math.max(dateToOff(endDt), 0), totalMin));
+
+        function syncPickersFromSliders() {
+            if (parseInt(rMin.value, 10) > parseInt(rMax.value, 10)) {
+                var t = rMin.value; rMin.value = rMax.value; rMax.value = t;
+            }
+            sp.value = fmtDate(offToDate(parseInt(rMin.value, 10)));
+            ep.value = fmtDate(offToDate(parseInt(rMax.value, 10)));
+        }
+        function syncSlidersFromPickers() {
+            if (sp.value) rMin.value = String(Math.min(Math.max(dateToOff(parseLocal(sp.value)), 0), totalMin));
+            if (ep.value) rMax.value = String(Math.min(Math.max(dateToOff(parseLocal(ep.value)), 0), totalMin));
+        }
+
+        rMin.addEventListener('input', syncPickersFromSliders);
+        rMax.addEventListener('input', syncPickersFromSliders);
+        sp.addEventListener('input', syncSlidersFromPickers);
+        ep.addEventListener('input', syncSlidersFromPickers);
+
+        // Auto-refresh the fetch on release (navigate with new date filters).
+        function reload() {
+            var params = new URLSearchParams();
+            if (FILTERS.articolo) params.set('articolo', FILTERS.articolo);
+            if (FILTERS.numero_riferimento) params.set('numero_riferimento', FILTERS.numero_riferimento);
+            if (sp.value) params.set('date_from', sp.value);
+            if (ep.value) params.set('date_to', ep.value);
+            if (activeCavity && activeCavity !== '__ALL__') params.set('cavity', activeCavity);
+            window.location.href = '{{ url_for("spc_tweaks") }}?' + params.toString();
+        }
+        rMin.addEventListener('change', reload);
+        rMax.addEventListener('change', reload);
+        sp.addEventListener('change', reload);
+        ep.addEventListener('change', reload);
+
+        // Time-precision toggles swap the picker between date and datetime-local.
+        function bindTimeToggle(toggleId, picker) {
+            document.getElementById(toggleId).addEventListener('change', function () {
+                var val = picker.value;
+                picker.type = this.checked ? 'datetime-local' : 'date';
+                if (val) picker.value = this.checked ? (val + 'T00:00') : val.split('T')[0];
+            });
+        }
+        bindTimeToggle('start-time-toggle', sp);
+        bindTimeToggle('end-time-toggle', ep);
+    })();
+
+    // ---- Cavity dropdown --------------------------------------------------
+    (function initCavity() {
+        var sel = document.getElementById('cavity-select');
+        CAVITIES.forEach(function (f) {
+            var o = document.createElement('option');
+            o.value = f; o.textContent = 'Cavity ' + f;
+            sel.appendChild(o);
+        });
+        if (CAVITIES.length > 1) {
+            var all = document.createElement('option');
+            all.value = '__ALL__'; all.textContent = 'All cavities';
+            sel.appendChild(all);
+        }
+        sel.value = activeCavity || (CAVITIES[0] || '');
+        sel.addEventListener('change', function () {
+            activeCavity = this.value;
+            document.getElementById('shift').value = 0;              // shift is per-cavity
+            document.getElementById('shift-val').textContent = '0%';
+            renderView();                                            // full re-render (new y-range)
+        });
+    })();
+
+    // ---- Wire controls ----------------------------------------------------
+    document.getElementById('squeeze').addEventListener('input', function () {
+        document.getElementById('squeeze-val').textContent = this.value + '%';
+        if (document.getElementById('preview-toggle').checked) refresh(false);
+    });
+    document.getElementById('shift').addEventListener('input', function () {
+        document.getElementById('shift-val').textContent = this.value + '%';
+        if (document.getElementById('preview-toggle').checked) refresh(false);
+    });
+    document.getElementById('flatten').addEventListener('change', function () {
+        if (document.getElementById('preview-toggle').checked) refresh(true);
+    });
+    document.getElementById('preview-toggle').addEventListener('change', function () { refresh(true); });
+
+    // ---- Commit -----------------------------------------------------------
+    document.getElementById('commit-btn').addEventListener('click', function () {
+        var p = currentParams();
+        var title = WRITE_ENABLED ? 'Commit tweak to MOSYS?' : 'Preview commit (writes disabled)';
+        var msg = WRITE_ENABLED
+            ? 'This will update the filtered MOSYS measurement records with the tweaked values. This action modifies production data.'
+            : 'Production writes are disabled, so this runs a dry-run only. No records will be changed.';
+        showConfirmModal(null, title, msg, WRITE_ENABLED ? 'Commit' : 'Run dry-run',
+            WRITE_ENABLED ? 'danger' : 'info', function () {
+            var body = {
+                articolo: FILTERS.articolo, numero_riferimento: FILTERS.numero_riferimento,
+                date_from: document.getElementById('start-picker').value.split('T')[0] || FILTERS.date_from,
+                date_to: document.getElementById('end-picker').value.split('T')[0] || FILTERS.date_to,
+                cavity: (activeCavity && activeCavity !== '__ALL__') ? activeCavity : '',
+                squeeze: p.s, shift: p.shift, flatten: p.flatten ? '1' : '0', threshold: p.threshold
+            };
+            fetch('{{ url_for("spc_tweaks_commit") }}', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+            }).then(function (r) { return r.json(); }).then(function (data) {
+                if (data.success) showToast(data.message || 'MOSYS records updated', 'success', 2000);
+                else showToast(data.error || 'The update could not be applied.', 'error', 4000);
+            }).catch(function () {
+                showToast('The update could not be applied. No records were changed.', 'error', 4000);
+            });
+        });
+    });
+
+    // ---- Init -------------------------------------------------------------
+    document.getElementById('squeeze-val').textContent = '0%';
+    document.getElementById('shift-val').textContent = '0%';
+    renderView();   // renders the active cavity with a stable y-range
+</script>
+{% endif %}
+{% endblock %}

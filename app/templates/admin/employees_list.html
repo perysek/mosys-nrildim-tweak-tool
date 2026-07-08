@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% block title %}Employees — MOSYS{% endblock %}
+{% block header_title %}Employees{% endblock %}
+
+{% block page_actions %}
+<form method="POST" action="{{ url_for('employees_sync_mosys') }}">
+    <button type="submit" class="btn-refined btn-refined-accent btn-press">MOSYS sync</button>
+</form>
+{% endblock %}
+
+{% block content %}
+<div class="refined-page">
+    <div class="page-header">
+        <div>
+            <h1 class="page-title">Employees</h1>
+            <p class="page-subtitle">Synced from MOSYS (STAAMPDB.OPERATORI) — activate to create a login account</p>
+        </div>
+    </div>
+
+    <div class="table-container">
+        <table class="refined-table table-align-middle" id="employeesTable">
+            <thead>
+                <tr>
+                    <th data-sort-col="0">
+                        <span class="th-header">
+                            <span>Full name</span>
+                            <button type="button" class="sort-btn" aria-label="Sort by full name">
+                                <span class="sort-icon" aria-hidden="true">⇅</span>
+                            </button>
+                        </span>
+                    </th>
+                    <th data-sort-col="1">
+                        <span class="th-header">
+                            <span>MOSYS ID</span>
+                            <button type="button" class="sort-btn" aria-label="Sort by MOSYS ID">
+                                <span class="sort-icon" aria-hidden="true">⇅</span>
+                            </button>
+                        </span>
+                    </th>
+                    <th data-sort-col="2">
+                        <span class="th-header">
+                            <span>Account</span>
+                            <button type="button" class="sort-btn" aria-label="Sort by account status">
+                                <span class="sort-icon" aria-hidden="true">⇅</span>
+                            </button>
+                        </span>
+                    </th>
+                    <th data-sort-col="3">
+                        <span class="th-header">
+                            <span>Role</span>
+                            <button type="button" class="sort-btn" aria-label="Sort by role">
+                                <span class="sort-icon" aria-hidden="true">⇅</span>
+                            </button>
+                        </span>
+                    </th>
+                    <th class="no-sort">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for e in employees %}
+                <tr>
+                    <td>{{ e['full_name'] }}</td>
+                    <td>{{ e['mosys_employee_id'] or '—' }}</td>
+                    <td>
+                        {% if not e['user_id'] %}No account
+                        {% elif e['user_is_active'] %}Active
+                        {% else %}Inactive
+                        {% endif %}
+                    </td>
+                    <td>{{ e['user_role']|capitalize if e['user_role'] else '—' }}</td>
+                    <td>
+                        <div style="display:flex;gap:0.35rem;">
+                            {% if e['user_id'] and e['user_is_active'] %}
+                            <form method="POST" action="{{ url_for('employee_deactivate', employee_id=e['id']) }}" style="display:inline;">
+                                <button type="button" class="btn-refined btn-refined-ghost btn-press"
+                                        data-name="{{ e['full_name'] }}"
+                                        onclick="confirmFormAction(this, 'Deactivate account', 'Deactivate', 'warning')">
+                                    Deactivate
+                                </button>
+                            </form>
+                            {% else %}
+                            <form method="POST" action="{{ url_for('employee_activate', employee_id=e['id']) }}" style="display:inline;">
+                                <button type="submit" class="btn-refined btn-refined-secondary btn-press">Activate</button>
+                            </form>
+                            {% endif %}
+                            {% if e['user_id'] %}
+                            <a class="btn-refined btn-refined-ghost btn-press"
+                               href="{{ url_for('employee_edit', employee_id=e['id']) }}">Edit</a>
+                            {% endif %}
+                        </div>
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="5"><div class="info-note">No employees synced yet — click "MOSYS sync".</div></td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='admin_table.js') }}"></script>
+<script>initSortableTable('employeesTable', 1, 'asc');</script>
+{% endblock %}
