@@ -40,9 +40,17 @@
         text-align: center; color: var(--color-ink-subtle); font-size: 0.9rem; padding: 1rem;
     }
     .chart-empty[hidden] { display: none; }
-    .side-col { flex: 1; min-width: 16rem; max-width: 22rem; display: flex; flex-direction: column; gap: 0.75rem; overflow-y: auto; }
+    .side-col { flex: 1; min-width: 17.5rem; max-width: 23rem; display: flex; flex-direction: column; gap: 0.75rem; overflow-y: auto; overflow-x: hidden; }
+    /* A thin, always-legible scrollbar — the side column is height-matched to the
+       chart (align-items: stretch below), so on shorter viewports its three
+       stacked panels can exceed that height. Without this the overflow is easy
+       to miss entirely and controls read as just... gone. */
+    .side-col::-webkit-scrollbar { width: 6px; }
+    .side-col::-webkit-scrollbar-track { background: transparent; }
+    .side-col::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+    .side-col::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
     .badge-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
-    .control-row { margin-bottom: 0.9rem; }
+    .control-row { margin-bottom: 0.7rem; }
     .control-row:last-child { margin-bottom: 0; }
     .range-value { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--color-accent-deep); }
     .dual-slider { position: relative; height: 1.5rem; }
@@ -50,13 +58,20 @@
     .dual-slider input[type=range]::-webkit-slider-thumb { pointer-events: auto; }
     .dual-slider input[type=range]::-moz-range-thumb { pointer-events: auto; }
     .dual-track { position: absolute; top: 0.65rem; left: 0; right: 0; height: 4px; background: var(--color-border); border-radius: 999px; }
-    .date-pickers { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.5rem; }
-    /* #4 fix: let the date input shrink and the time switch stay whole so the
-       'time' caption never overflows the Adjustments panel. */
-    .picker-line { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
-    .picker-line > label { font-size: 0.72rem; color: var(--color-ink-subtle); width: 2.6rem; flex-shrink: 0; }
-    .picker-line .refined-input { flex: 1 1 6rem; min-width: 0; }
+    .date-pickers { display: flex; flex-direction: column; gap: 0.65rem; margin-top: 0.5rem; }
+    /* Stacked, not side-by-side: a native datetime-local input needs ~11-12rem
+       just for its own day/month/year/time fields and calendar icon, which a
+       160px-wide side panel can't also give to a label AND the time switch on
+       one row without clipping the input itself (the earlier bug — the date
+       box and the 'time' caption were both getting sliced off). Putting the
+       label + switch on their own compact header row and giving the input the
+       full row-width below means the input is never forced to compete for
+       space with anything wider than a checkbox label. */
+    .picker-line { display: flex; flex-direction: column; gap: 0.3rem; }
+    .picker-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+    .picker-head .field-label { margin: 0; }
     .picker-line .switch { flex-shrink: 0; font-size: 0.72rem; }
+    .picker-line .refined-input { width: 100%; }
     /* Tolerance readout (#3) */
     .tol-readout { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.4rem; margin-bottom: 0.6rem; }
     .tol-cell { text-align: center; padding: 0.35rem 0.25rem; border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface); }
@@ -67,6 +82,27 @@
     .spc-actions {
         display: flex; justify-content: flex-end; align-items: center; gap: 0.75rem;
         margin-top: 0.75rem; flex-shrink: 0;
+    }
+
+    /* Below this width the chart and the controls column can no longer share a
+       row without the panel squeeze that caused the original overflow — stack
+       them instead. Every flex/height rule below re-targets sizing that was
+       tuned for the row layout (chart-col/side-col splitting available WIDTH
+       3:1, spc-grid sized to LEFTOVER height in refined-page) — left as-is,
+       those same rules would just relocate the squeeze into the stacked
+       column instead of fixing it, and would size spc-grid shorter than its
+       now-much-taller stacked content, letting that content spill into the
+       next section below (.spc-actions) instead of pushing it down. Every
+       element here gets its natural content size instead, and the page
+       scrolls as a whole — the normal, expected place to scroll. */
+    @media (max-width: 900px) {
+        .spc-grid { flex: 0 0 auto; flex-direction: column; }
+        .chart-col { flex: 0 0 auto; }
+        .side-col {
+            flex: 0 0 auto; max-width: none; min-width: 0;
+            overflow-y: visible; overflow-x: visible;
+        }
+        .chart-wrap { flex: none; height: 18rem; min-height: 0; }
     }
 </style>
 {% endblock %}
@@ -198,22 +234,26 @@
                     </div>
                     <div class="date-pickers">
                         <div class="picker-line">
-                            <label for="start-picker">Start</label>
+                            <div class="picker-head">
+                                <label for="start-picker" class="field-label">Start</label>
+                                <label class="switch" title="Enable start time precision">
+                                    <input type="checkbox" id="start-time-toggle">
+                                    <span class="switch-track"><span class="switch-thumb"></span></span>
+                                    <span>time</span>
+                                </label>
+                            </div>
                             <input type="date" id="start-picker" class="refined-input">
-                            <label class="switch" title="Enable start time precision">
-                                <input type="checkbox" id="start-time-toggle">
-                                <span class="switch-track"><span class="switch-thumb"></span></span>
-                                <span>time</span>
-                            </label>
                         </div>
                         <div class="picker-line">
-                            <label for="end-picker">End</label>
+                            <div class="picker-head">
+                                <label for="end-picker" class="field-label">End</label>
+                                <label class="switch" title="Enable end time precision">
+                                    <input type="checkbox" id="end-time-toggle">
+                                    <span class="switch-track"><span class="switch-thumb"></span></span>
+                                    <span>time</span>
+                                </label>
+                            </div>
                             <input type="date" id="end-picker" class="refined-input">
-                            <label class="switch" title="Enable end time precision">
-                                <input type="checkbox" id="end-time-toggle">
-                                <span class="switch-track"><span class="switch-thumb"></span></span>
-                                <span>time</span>
-                            </label>
                         </div>
                     </div>
                 </div>
